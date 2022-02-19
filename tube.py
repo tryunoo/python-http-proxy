@@ -1,7 +1,8 @@
 from httpprocess import HttpProcess
 from request import HttpRequest, HttpResponse
+import datetime
 import socket
-
+import time
 
 def recv_all(s):
     buf_size = 65536
@@ -13,12 +14,9 @@ def recv_all(s):
             data += recv_data
             if len(recv_data) < buf_size:
                 break
-            else:
-                s.settimeout(1)
+
         except socket.timeout:
             break
-
-    s.settimeout(10)
         
     return data
 
@@ -27,6 +25,8 @@ def send_http_request(s, req: HttpRequest):
     hp = HttpProcess()
     
     req = hp.process_request(req)
+
+    req.send_time = datetime.datetime.now()
     
     raw_request = req.get_raw_request()
     s.sendall(raw_request)
@@ -34,7 +34,9 @@ def send_http_request(s, req: HttpRequest):
     return len(raw_request)
 
 
-def recv_http_response(s):
+def recv_http_response(s, req):
+    start_time = time.perf_counter()
+
     data = recv_all(s)
 
     res = HttpResponse(data)
@@ -48,6 +50,7 @@ def recv_http_response(s):
 
             data = recv_all(s)
             res.raw_body += data
+            res.res_len += len(data)
     
     elif 'Transfer-Encoding' in res.headers and res.headers['Transfer-Encoding'] == 'chunked':
         while True:
@@ -56,6 +59,7 @@ def recv_http_response(s):
 
             data = recv_all(s)
             res.raw_body += data
+            res.res_len += len(data)
     elif 'transfer-encoding' in res.headers and res.headers['transfer-encoding'] == 'chunked':
         while True:
             if data.endswith(b'0\r\n\r\n'):
@@ -63,10 +67,14 @@ def recv_http_response(s):
 
             data = recv_all(s)
             res.raw_body += data
-    
-    
+            res.res_len += len(data)
+
+    end_time = time.perf_counter()
+            
+    res.round_trip_time = round(end_time - start_time, 3)
+
     hp = HttpProcess()
-    res = hp.process_response(res)
+    res = hp.process_response(req, res)
     
     return res
 

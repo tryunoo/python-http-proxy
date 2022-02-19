@@ -5,6 +5,7 @@ import io
 
 class HttpRequest():
     def __init__(self, raw_req: bytes):
+        self.send_time = None
         # https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html
         self.http_version = None
         self.method = None # GET, POST, etc.
@@ -101,6 +102,7 @@ class HttpRequest():
 
 class HttpResponse():
     def __init__(self, raw_res: bytes):
+        self.round_trip_time = None
         self.http_version = None
         self.status_code = None
         self.raw_header = b''
@@ -108,6 +110,7 @@ class HttpResponse():
         self.queries = {}
         self.headers = {}
         self.body_parameters = {}
+        self.res_len = 0
 
         self.create_response_object(raw_res)
     
@@ -118,6 +121,8 @@ class HttpResponse():
 
     def create_response_object(self, raw_res: bytes):
         self.raw_header, self.raw_body = raw_res.split(b'\r\n\r\n', 1)
+
+        self.res_len = len(raw_res)
 
         try:
             response_line, headers = self.raw_header.decode('utf-8').split('\r\n', 1)

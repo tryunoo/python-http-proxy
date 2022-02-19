@@ -1,18 +1,15 @@
 from distutils.debug import DEBUG
 from email import header
+from tracemalloc import start
 from request import HttpRequest, HttpResponse
 import tube
 import tempfile
-import urllib.request
 import cert
 import socketserver
 import socket
-import email
 import time
 import ssl
-import sys
-import io
-import os
+
 
 
 server_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -48,8 +45,9 @@ class TCPHandler(socketserver.BaseRequestHandler):
             server_socket = self.connect_server(req.host, req.port)
 
             tube.send_http_request(server_socket, req)
-            res = tube.recv_http_response(server_socket)
-            
+
+            res = tube.recv_http_response(server_socket, req)
+
             client_socket.sendall(res.get_raw_response())
 
         # SSL通信の場合（HTTPS）
@@ -93,8 +91,8 @@ class TCPHandler(socketserver.BaseRequestHandler):
             ssl_server_socket = server_ctx.wrap_socket(server_socket, server_hostname=req.host)
             tube.send_http_request(ssl_server_socket, req)
 
-            res = tube.recv_http_response(ssl_server_socket)
-            
+            res = tube.recv_http_response(ssl_server_socket, req)
+
             ssl_client_socket.sendall(res.get_raw_response())
 
             ssl_server_socket.close()
