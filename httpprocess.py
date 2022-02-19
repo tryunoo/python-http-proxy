@@ -1,5 +1,6 @@
 from request import HttpRequest, HttpResponse
 from termcolor import colored
+import sys
 
 class HttpProcess():
     def __init__(self):
@@ -11,6 +12,5 @@ class HttpProcess():
 
     # レスポンス取得後のカスタム処理
     def process_response(self, req: HttpRequest, res: HttpResponse):
-        print(colored(req.method, 'cyan') + ' ' + req.scheme + '://' + req.authority + req.path + '\n    ' + colored(res.status_code, 'yellow') + ' ' + str(round(res.res_len/1024, 3)) + 'kb ' + str(res.round_trip_time) + 'sec')
-
+        print(colored(req.method, 'cyan') + ' ' + req.scheme + '://' + req.authority + req.path + '\n    ' + colored(res.status_code, 'yellow') + ' ' + str(round(res.res_len/1024, 3)) + 'kb ' + str(res.round_trip_time) + 'sec\n', end='')
         return res
