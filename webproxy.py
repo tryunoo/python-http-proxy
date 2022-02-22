@@ -1,5 +1,4 @@
 from distutils.debug import DEBUG
-from email import header
 from tracemalloc import start
 from request import HttpRequest, HttpResponse
 import tube
@@ -7,7 +6,6 @@ import tempfile
 import cert
 import socketserver
 import socket
-import time
 import ssl
 
 
