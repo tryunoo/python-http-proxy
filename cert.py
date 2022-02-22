@@ -87,17 +87,14 @@ def create_server_cert(host, port):
     x509.set_issuer(cacrt.get_subject())
 
     x509.add_extensions([
-        #crypto.X509Extension(b'basicConstraints', False, b'CA:FALSE'),
-        #crypto.X509Extension(b'ExtendedKeyUsage', False, b'Server Authentication'),
+        crypto.X509Extension(b'extendedKeyUsage', False, b'serverAuth'),
         crypto.X509Extension(b'subjectAltName', False, altname)
     ])
-    #x509.add_extensions(x509req.get_extensions())
 
-    x509.set_version(3)
+    x509.set_version(2)
     x509.set_pubkey(x509req.get_pubkey())
     
-    #cakey = crypto.dump_privatekey(crypto.FILETYPE_PEM, k)
-    x509.sign(key, "sha512")
+    x509.sign(key, "sha256")
 
     crt = crypto.dump_certificate(crypto.FILETYPE_PEM, x509)
 
