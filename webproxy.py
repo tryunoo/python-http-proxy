@@ -33,11 +33,8 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
     def handle(self):
         client_socket = self.request
-        raw_request = tube.recv_all(client_socket)
-        if len(raw_request) == 0: return
+        req = tube.recv_http_request(client_socket)
         
-        req = HttpRequest(raw_request)
-
         # SSL通信でない場合（HTTP）
         if req.method != 'CONNECT':
             server_socket = self.connect_server(req.host, req.port)
@@ -70,17 +67,15 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
             client_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             client_ctx.load_cert_chain(certfile=fp.name, keyfile="ssl/mitmproxy-ca.pem")
-            #client_ctx.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
 
             try:
                 ssl_client_socket = client_ctx.wrap_socket(client_socket, server_side=True)
+                ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             except Exception as e:
                 return
                 
-            raw_request = tube.recv_all(ssl_client_socket)
-            if len(raw_request) == 0: return
+            req = tube.recv_http_request(ssl_client_socket)
 
-            req = HttpRequest(raw_request)
             req.host = host
             req.port = port
 
