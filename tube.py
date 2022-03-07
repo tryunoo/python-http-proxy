@@ -72,7 +72,6 @@ def recv_http_body(s, headers):
             data = recv_all(s)
             raw_body += data
             body_len += len(data)
-            print(data)
     elif 'content-length' in headers:
         content_length = int(headers['content-length'])-1
 
