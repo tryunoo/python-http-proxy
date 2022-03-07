@@ -68,12 +68,19 @@ def recv_http_body(s, headers):
     if 'Content-Length' in headers:
         content_length = int(headers['Content-Length'])-1
 
-        while True:
-            if body_len >= content_length:
-                break
+        while body_len < content_length:
             data = recv_all(s)
             raw_body += data
             body_len += len(data)
+            print(data)
+    elif 'content-cength' in headers:
+        content_length = int(headers['content-length'])-1
+
+        while body_len < content_length:
+            data = recv_all(s)
+            raw_body += data
+            body_len += len(data)
+            print(data)
     elif 'Transfer-Encoding' in headers and headers['Transfer-Encoding'] == 'chunked':
         while True:
             data = recv_all(s)
