@@ -1,6 +1,7 @@
 from distutils.debug import DEBUG
 from tracemalloc import start
 from OpenSSL import crypto
+import base64
 import tube
 import tempfile
 import cert
@@ -10,6 +11,7 @@ import socket
 import ssl
 import json
 import os
+import re
 
 
 server_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -35,6 +37,15 @@ class TCPHandler(socketserver.BaseRequestHandler):
     def handle(self):
         client_socket = self.request
         req = tube.recv_http_request(client_socket)
+
+        if config.auth:
+            if 'Proxy-Authorization' not in req.headers:
+                client_socket.send(b"HTTP/1.0 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access to proxy\"\n\n<html>Proxy Authentication Required.</html>")
+                return
+
+            if req.headers['Proxy-Authorization'].split()[-1] != config.auth_base64:
+                client_socket.send(b"HTTP/1.0 403 Forbidden\nProxy-Authenticate: Basic realm=\"Access to proxy\"\n\n<html>Proxy Authentication Faild.</html>\n")
+                return
         
         # SSL通信でない場合（HTTP）
         if req.method != 'CONNECT':
@@ -83,29 +94,43 @@ class TCPHandler(socketserver.BaseRequestHandler):
             tube.send_http_request(ssl_server_socket, req)
 
             res = tube.recv_http_response(ssl_server_socket, req)
+            ssl_server_socket.close()
 
             ssl_client_socket.sendall(res.get_raw_response())
-
-            ssl_server_socket.close()
             ssl_client_socket.close()
             
         return
 
 
 def read_config():
-    if not os.path.isfile('config.json'):
-        util.print_error_exit('"config.json" is not exist.')
+    if not os.path.isfile('proxy.conf'):
+        util.print_error_exit('"proxy.conf" is not exist.')
 
-    with open('config.json', 'rb') as f:
+    with open('proxy.conf', 'rt') as f:
+        conf_text = f.read()
+        conf_text = re.sub(r"#[^\n]*", "", conf_text)
+
         try:
-            json_config = json.load(f)
+            json_config = json.loads(conf_text)
         except:
-            util.print_error_exit('"config.json": JSON Parse Error.')
+            util.print_error_exit('"proxy.conf": JSON Parse Error.')
 
         config.host = json_config['host']
         config.port = json_config['port']
         config.private_key_path = json_config['private_key_path']
         config.cacert_path = json_config['cacert_path']
+        try:
+            config.auth = json_config['auth']
+        except:
+            config.auth = False
+        
+        if config.auth:
+            if 'auth_user_name' not in json_config:
+                util.print_error_exit('"proxy.conf: Need auth_user_name')
+            if 'auth_password' not in json_config:
+                util.print_error_exit('"proxy.conf: Need auth_password')
+
+            config.auth_base64 = base64.b64encode(b'%s:%s' %(json_config['auth_user_name'].encode(), json_config['auth_password'].encode())).decode()
 
 
 if __name__ == "__main__":
@@ -115,6 +140,6 @@ if __name__ == "__main__":
     mycert.private_key, mycert.private_key_pem = cert.get_private_key(config.private_key_path)
     mycert.cacert, mycert.cacert_pem = cert.get_cacert(config.cacert_path)
     
+    socketserver.allow_reuse_address = True
     with socketserver.ThreadingTCPServer((config.host, config.port), TCPHandler) as server:
-        server.allow_reuse_address = True
         server.serve_forever()
