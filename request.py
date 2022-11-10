@@ -9,8 +9,10 @@ class HttpRequest():
         # https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html
         self.http_version = None
         self.method = None # GET, POST, etc.
-        self.uri = None # https://www.example.com:443/test/index.html?param1=foo&param2=bar#fragment
+        self.uri = None # https://user:pass@www.example.com:443/test/index.html?param1=foo&param2=bar#fragment
         self.scheme = None # http or https
+        self.authority = None # user:pass@www.example.com:443
+        self.user_info = '' # user:pass
         self.host = None # www.example.com
         self.port = None # 80, 443, etc.
         self.path = '' # /test/index.html
@@ -39,10 +41,7 @@ class HttpRequest():
 
         self.method, self.uri, self.http_version = request_line.split(' ')
 
-        if ':' in self.headers['Host']:
-            self.host, self.port = self.headers['Host'].split(':')
-            self.port = int(self.port)
-        else:
+        if 'Host' in self.headers:
             self.host = self.headers['Host']
 
         if self.method == 'CONNECT':
@@ -63,11 +62,33 @@ class HttpRequest():
         if self.scheme == 'http':
             self.raw_header = self.raw_header.replace(b'http://' + self.host.encode('utf-8'), b'', 1)
 
-        if self.port == None:
-            if self.scheme == 'http':
-                self.port = 80
+        if '@' in self.authority:
+            splitted = self.authority.split('@')
+            self.user_info = splitted[0]
+
+            if ':' in splitted[1]:
+                self.host, self.port = splitted[1].split(':')
+                self.port = int(self.port)
             else:
-                self.port = 443
+                self.host = splitted[1]
+                if self.scheme == 'http':
+                    self.port = 80
+                else:
+                    self.port = 443
+
+        else:
+            if ':' in self.authority:
+                self.host, self.port = self.authority.split(':')
+                self.port = int(self.port)
+            else:
+                self.host = self.authority
+                if self.scheme == 'http':
+                    self.port = 80
+                else:
+                    self.port = 443
+        
+        if self.host == '':
+            self.host = self.headers['Host']
 
 
     def set_body(self, raw_body):

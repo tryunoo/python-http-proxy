@@ -1,0 +1,6 @@
+{
+    "host": "localhost",
+    "port": 9999,
+    "private_key_path": "ssl/ca-key.pem",
+    "cacert_path": "ssl/ca-cert.pem"
+}
