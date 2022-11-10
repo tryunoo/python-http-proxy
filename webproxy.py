@@ -63,11 +63,13 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
             client_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             client_ctx.load_cert_chain(certfile=fp.name, keyfile=config.private_key_path)
+            fp.close()
 
             try:
                 ssl_client_socket = client_ctx.wrap_socket(client_socket, server_side=True)
                 ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             except Exception as e:
+                util.print_error("SSL connect error.")
                 return
                 
             req = tube.recv_http_request(ssl_client_socket)
@@ -86,7 +88,6 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
             ssl_server_socket.close()
             ssl_client_socket.close()
-            fp.close()
             
         return
 

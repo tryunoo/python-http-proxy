@@ -78,12 +78,11 @@ def create_cacert(private_key):
     cacert.gmtime_adj_notAfter(31536000)
     cacert.set_serial_number(serialnumber)
     cacert.set_issuer(cacert.get_subject())
-    cacert.set_version(3)
+    cacert.set_version(2)
     cacert.set_pubkey(private_key)
 
     cacert.add_extensions([
-        crypto.X509Extension(
-            b'basicConstraints', False, b'CA:TRUE'),
+        crypto.X509Extension(b'basicConstraints', False, b'CA:TRUE'),
     ])
 
     cacert.sign(private_key, 'sha256')
@@ -103,7 +102,7 @@ def create_csr(private_key, subject):
     if subject.O is not None: csr.get_subject().O = subject.O
     if subject.OU is not None: csr.get_subject().OU = subject.OU
 
-    csr.set_version(3)
+    csr.set_version(2)
     csr.set_pubkey(private_key)
     csr.sign(private_key, 'sha256')
 
@@ -126,10 +125,11 @@ def create_server_cert(host, port, private_key, cacert):
 
     server_cert.add_extensions([
         crypto.X509Extension(b'extendedKeyUsage', False, b'serverAuth'),
-        crypto.X509Extension(b'subjectAltName', False, altname)
+        crypto.X509Extension(b'subjectAltName', False, altname),
+        crypto.X509Extension(b'basicConstraints', False, b'CA:FALSE'),
     ])
 
-    server_cert.set_version(3)
+    server_cert.set_version(2)
     server_cert.set_pubkey(csr.get_pubkey())
     server_cert.sign(private_key, "sha256")
 
