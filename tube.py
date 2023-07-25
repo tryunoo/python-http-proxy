@@ -1,130 +1,87 @@
-from urllib import request
-from httpprocess import HttpProcess
-from request import HttpRequest, HttpResponse
-import datetime
 import socket
-import time
+import re
+import email
+import ssl
+import h11
 
-def recv_all(s):
-    buf_size = 32768
-    data = b''
-
-    while True:
-        try:
-            recv_data = s.recv(buf_size)
-            data += recv_data
-            if len(recv_data) < buf_size:
-                break
-
-        except socket.timeout:
-            break
-        
-    return data
+server_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+server_ctx.check_hostname = False
+server_ctx.verify_mode = 0
 
 
-def recv_line(s):
-    data = b''
-
-    while True:
-        recv_data = s.recv(1)
-        data += recv_data
-        if recv_data == b'\n':
-            break
-    
-    return data
-
-
-def send_http_request(s, req: HttpRequest):
-    hp = HttpProcess()
-    
-    req = hp.process_request(req)
-
-    req.send_time = datetime.datetime.now()
-    
-    raw_request = req.get_raw_request()
-    
-    s.sendall(raw_request)
-
-    return len(raw_request)
-
-
-def recv_http_header(s):
-    data = b''
-    
-    while True:
-        recv_data = recv_line(s)
-
-        data += recv_data
-        if recv_data == b'\r\n' or recv_data == b'\n':
-            break
-    
-    return data
-
-
-def recv_http_body(s, headers):
+def recv_http_body(s, conn):
     raw_body = b''
-    body_len = 0
 
-    if 'Content-Length' in headers:
-        content_length = int(headers['Content-Length'])-1
+    while True:
+        event = conn.next_event()
 
-        while True:
-            if body_len >= content_length:
-                break
-            data = recv_all(s)
-            raw_body += data
-            body_len += len(data)
-    elif 'Transfer-Encoding' in headers and headers['Transfer-Encoding'] == 'chunked':
-        while True:
-            data = recv_all(s)
-            raw_body += data
-            body_len += len(data)
-            if data.endswith(b'0\r\n\r\n'):
-                break
-    elif 'transfer-encoding' in headers and headers['transfer-encoding'] == 'chunked':
-        while True:
-            data = recv_all(s)
-            raw_body += data
-            body_len += len(data)
-            if data.endswith(b'0\r\n\r\n'):
-                break
-    elif 'Content-Type' in headers:
-        s.settimeout(3)
-        data = recv_all(s)
-        raw_body += data
-        body_len += len(data)
+        if event is h11.NEED_DATA:
+            received_data = s.recv(4096)
+            conn.receive_data(received_data)
+        elif type(event) is h11.Data:
+            raw_body += bytes(event.data)
+
+        if not event:
+            break
+        if type(event) is h11.EndOfMessage:
+            break
+        if type(event) is h11.ConnectionClosed:
+            break
 
     return raw_body
 
 
-def recv_http_request(s):
-    req = HttpRequest()
+def recv_http_header(s, conn):
+    raw_header = b''
+    while True:
+        event = conn.next_event()
+        if event is h11.NEED_DATA:
+            received_data = s.recv(4096)
+            conn.receive_data(received_data)
+            raw_header += received_data
 
-    raw_header = recv_http_header(s)
-    req.set_header(raw_header)
+        if not event:
+            break
+        if type(event) is h11.Response or type(event) is h11.Request:
+            break
+        if type(event) is h11.CLOSED:
+            break
 
-    raw_body = recv_http_body(s, req.headers)
-    req.set_body(raw_body)
-
-    return req
+    return raw_header
 
 
-def recv_http_response(s, req):
-    start_time = time.perf_counter()
-    
-    raw_header = recv_http_header(s)
+def recv_raw_http_msg(s: socket.socket, conn):
+    raw_header = recv_http_header(s, conn)
+    raw_body = recv_http_body(s, conn)
+    raw_msg = raw_header + raw_body
 
-    res = HttpResponse()
-    res.set_header(raw_header)
+    return raw_msg
 
-    raw_body = recv_http_body(s, res.headers)
-    res.set_body(raw_body)
 
-    end_time = time.perf_counter()
-            
-    res.round_trip_time = round(end_time - start_time, 3)
+def recv_raw_http_response(s: socket.socket):
+    return recv_raw_http_msg(s, h11.Connection(our_role=h11.CLIENT))
 
-    hp = HttpProcess()
-    res = hp.process_response(req, res)
-    
-    return res
+
+def recv_raw_http_request(s: socket.socket):
+    return recv_raw_http_msg(s, h11.Connection(our_role=h11.SERVER))
+
+
+def send_recv(host: str, port: int, is_ssl: bool, raw_request: bytes, timeout: int = 10) -> bytes | None:
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.connect((host, port))
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.settimeout(timeout)
+
+    if is_ssl:
+        server_socket = server_ctx.wrap_socket(server_socket, server_hostname=host)
+
+    server_socket.sendall(raw_request)
+
+    try:
+        raw_response = recv_raw_http_response(server_socket)
+    except ConnectionResetError:
+        return None
+
+    server_socket.close()
+
+    return raw_response

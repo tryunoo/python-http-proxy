@@ -1,6 +1,4 @@
-from distutils.debug import DEBUG
-from tracemalloc import start
-from OpenSSL import crypto
+from request import HttpRequest
 import base64
 import tube
 import tempfile
@@ -13,92 +11,121 @@ import json
 import os
 import re
 
-
-server_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-#server_ctx.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-server_ctx.check_hostname = False
-server_ctx.verify_mode = 0
-
 class Config(): pass
 config = Config()
+
 
 class MyCert(): pass
 mycert = MyCert()
 
+
 class TCPHandler(socketserver.BaseRequestHandler):
-    def connect_server(self, host, port):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.connect((host, port))
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    def process_http(self, client_socket, request_object: HttpRequest):
+        request_object.set_is_ssl(False)
+        host, port = request_object.get_target_from_raw_request()
 
-        return server_socket
+        if not host or not port:
+            util.print_error("Error: host or port is None.")
+            return
 
+        request_object.set_host(host)
+        request_object.set_port(port)
+
+        response_object = request_object.send()
+
+        if not response_object:
+            util.print_error("Error: Response is None")
+            return
+
+        client_socket.sendall(response_object.get_raw_response())
+        client_socket.close()
+        return
+
+    def process_https(self, client_socket, request_object: HttpRequest):
+        # webプロキシ接続OKの応答をクライアントに返す
+        client_socket.send(b"HTTP/1.0 200 Connection established\r\n\r\n")
+
+        request_object.set_is_ssl(True)
+        host, port = request_object.get_target_from_raw_request()
+
+        if not host or not port:
+            util.print_error("Error: host or port is None.")
+            return
+
+        request_object.set_host(host)
+        request_object.set_port(port)
+
+        _, server_cert_pem = cert.create_server_cert(request_object.host, request_object.port, mycert.private_key, mycert.cacert)
+
+        fp = tempfile.NamedTemporaryFile()
+        fp.write(server_cert_pem)
+        fp.write(mycert.cacert_pem)
+        fp.seek(0)
+
+        client_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        client_ctx.load_cert_chain(certfile=fp.name, keyfile=config.private_key_path)
+        fp.close()
+
+        try:
+            ssl_client_socket = client_ctx.wrap_socket(client_socket, server_side=True)
+            ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except Exception as e:
+            client_socket.close()
+            util.print_error("SSL connection error: %s" % e)
+            return
+
+        raw_request = tube.recv_raw_http_request(ssl_client_socket)
+
+        request_object = HttpRequest(raw_request, host=host, port=port, is_ssl=True)
+
+        # 対象サーバにリクエストを送信する
+        response_object = request_object.send()
+
+        try:
+            ssl_client_socket.sendall(response_object.get_raw_response())
+        except OSError as e:
+            util.print_error("Sending Error: %s" % e)
+            pass
+
+        ssl_client_socket.close()
+
+        return
 
     def handle(self):
         client_socket = self.request
-        req = tube.recv_http_request(client_socket)
-
-        if config.auth:
-            if 'Proxy-Authorization' not in req.headers:
-                client_socket.send(b"HTTP/1.0 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access to proxy\"\n\n<html>Proxy Authentication Required.</html>")
-                return
-
-            if req.headers['Proxy-Authorization'].split()[-1] != config.auth_base64:
-                client_socket.send(b"HTTP/1.0 403 Forbidden\nProxy-Authenticate: Basic realm=\"Access to proxy\"\n\n<html>Proxy Authentication Faild.</html>\n")
-                return
+        try:
+            raw_request = tube.recv_raw_http_request(client_socket)
+        except ConnectionResetError:
+            return
         
+        try:
+            request_object = HttpRequest(raw_request)
+        except:
+            return
+
+        if not request_object:
+            return
+
+        '''
+        if config.auth:
+            if 'Proxy-Authorization' not in request_object.headers:
+                client_socket.send(b"HTTP/1.0 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"Access to proxy\"\r\n\r\n<html>Proxy Authentication Required.</html>")
+                return
+
+            if request_object.headers['Proxy-Authorization'].split()[-1] != config.auth_base64:
+                client_socket.send(b"HTTP/1.0 403 Forbidden\r\nProxy-Authenticate: Basic realm=\"Access to proxy\"\r\n\r\n<html>Proxy Authentication Faild.</html>\r\n")
+                return
+        '''
+        
+
         # SSL通信でない場合（HTTP）
-        if req.method != 'CONNECT':
-            server_socket = self.connect_server(req.host, req.port)
-
-            tube.send_http_request(server_socket, req)
-
-            res = tube.recv_http_response(server_socket, req)
-
-            client_socket.sendall(res.get_raw_response())
+        if request_object.get_method() != 'CONNECT':
+            self.process_http(client_socket, request_object)
 
         # SSL通信の場合（HTTPS）
-        if req.method == 'CONNECT':
-            # webプロキシ接続OKの応答をクライアントに返す
-            client_socket.send(b"HTTP/1.0 200 Connection established\n\n")
+        if request_object.get_method() == 'CONNECT':
+            self.process_https(client_socket, request_object)
 
-            host = req.host
-            port = req.port
-
-            _, server_cert_pem = cert.create_server_cert(req.host, req.port, mycert.private_key, mycert.cacert)
-            
-            fp = tempfile.NamedTemporaryFile()
-            fp.write(server_cert_pem)
-            fp.write(mycert.cacert_pem)
-            fp.seek(0)
-
-            client_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            client_ctx.load_cert_chain(certfile=fp.name, keyfile=config.private_key_path)
-            fp.close()
-
-            try:
-                ssl_client_socket = client_ctx.wrap_socket(client_socket, server_side=True)
-                ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            except Exception as e:
-                util.print_error("SSL connect error.")
-                return
-                
-            req = tube.recv_http_request(ssl_client_socket)
-
-            req.host = host
-            req.port = port
-
-            # 対象サーバにリクエストを送信する
-            server_socket = self.connect_server(req.host, req.port)
-            ssl_server_socket = server_ctx.wrap_socket(server_socket, server_hostname=req.host)
-            tube.send_http_request(ssl_server_socket, req)
-
-            res = tube.recv_http_response(ssl_server_socket, req)
-            ssl_server_socket.close()
-
-            ssl_client_socket.sendall(res.get_raw_response())
-            ssl_client_socket.close()
-            
         return
 
 
@@ -134,12 +161,13 @@ def read_config():
 
 
 if __name__ == "__main__":
-    HOST, PORT = "a", 9999
     read_config()
+
+    print(f"Serving on %s %s" % (config.host, config.port))
 
     mycert.private_key, mycert.private_key_pem = cert.get_private_key(config.private_key_path)
     mycert.cacert, mycert.cacert_pem = cert.get_cacert(config.cacert_path)
     
-    socketserver.allow_reuse_address = True
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer((config.host, config.port), TCPHandler) as server:
         server.serve_forever()
