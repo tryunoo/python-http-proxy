@@ -18,8 +18,7 @@ def recv_http_body(s, conn):
         if event is h11.NEED_DATA:
             received_data = s.recv(4096)
             conn.receive_data(received_data)
-        elif type(event) is h11.Data:
-            raw_body += bytes(event.data)
+            raw_body += received_data
 
         if not event:
             break
