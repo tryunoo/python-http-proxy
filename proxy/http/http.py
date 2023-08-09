@@ -5,7 +5,7 @@ import urllib
 from cgi import FieldStorage
 from collections.abc import Iterator
 from collections.abc import MutableMapping
-from proxy import exceptions
+from webscanner.http import exceptions
 
 
 class Headers(MutableMapping):
@@ -162,7 +162,7 @@ class Headers(MutableMapping):
         return tuple(field[0] for field in self.fields)
 
 
-class Query:
+class Query(MutableMapping):
     """
     >>> q = Query("value=a&value=b&num=3")
 
@@ -198,6 +198,14 @@ class Query:
 
         return False
 
+    def __getitem__(self, key: str | int) -> str | list:
+        if type(key) is int:
+            key = str(key)
+
+        for _key, values in self.queries.items():
+            if _key == key:
+                return values
+
     def __setitem__(self, key: str, values: str | list) -> None:
         if type(values) is str:
             values = [values]
@@ -208,6 +216,16 @@ class Query:
 
     def __delitem__(self, key: str):
         del self.queries[key]
+
+    def __iter__(self) -> Iterator:
+        seen = set()
+        for key, _ in self.queries.items():
+            if key not in seen:
+                seen.add(key)
+                yield key
+
+    def __len__(self) -> int:
+        return len(self.fields)
 
 
 class RequestMessage:
@@ -229,7 +247,8 @@ class RequestMessage:
             raw_header = remained.strip()
             self.raw_body = b''
 
-        self.method, request_target, self.http_version = request_line.decode("utf-8").split(" ")
+        self.method, request_target, self.http_version = request_line.decode(
+            "utf-8").split(" ")
 
         self.headers = Headers(raw_header)
 
