@@ -1,4 +1,3 @@
-from proxy.http.http import ResponseMessage
 import socket
 import ssl
 import h11
@@ -44,11 +43,7 @@ def recv_http_header(s, conn):
 
 def recv_raw_http_msg(s: socket.socket, conn):
     raw_header = recv_http_header(s, conn)
-    connection_reader = conn._reader
     raw_body = recv_http_body(s, conn)
-
-    if type(connection_reader) == h11._readers.ChunkedReader:
-        pass
 
     raw_msg = raw_header + raw_body
 
