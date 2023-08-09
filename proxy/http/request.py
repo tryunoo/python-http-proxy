@@ -66,7 +66,7 @@ class Request:
                 response_message.raw_body = util.chunked_conv(response_message.raw_body)
                 del response_message.headers['Transfer-Encoding']
 
-        # 圧縮されているボディを解凍
+        # エンコーディングされているボディをデコード
         if 'Content-Encoding' in response_message.headers:
             content_encoding = response_message.headers['Content-Encoding']
             response_message.raw_body = encoding.decode(response_message.raw_body, content_encoding)
