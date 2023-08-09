@@ -35,9 +35,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
         request = Request(host, port, False, message=request_message)
         response = request.send()
 
-        if not response:
-            util.print_error("Error: Response is None")
-            return
+        if not response: return
 
         client_socket.sendall(bytes(response.message))
         client_socket.close()
@@ -71,7 +69,6 @@ class TCPHandler(socketserver.BaseRequestHandler):
             ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         except Exception as e:
             client_socket.close()
-            util.print_error("SSL connection error: %s" % e)
             return
 
         raw_request = tube.recv_raw_http_request(ssl_client_socket)
@@ -85,8 +82,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
         try:
             ssl_client_socket.sendall(bytes(response.message))
         except OSError as e:
-            util.print_error("Sending Error: %s" % e)
-            pass
+            return
 
         ssl_client_socket.close()
 

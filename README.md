@@ -4,7 +4,7 @@ Simple HTTP/HTTPS proxy written in Python.
 ![](./img/ScreenShot.png)
 
 ## HTTPS Handling
-Install "ssl/ca-cert.pem" in your browser.
+Install "proxy/ssl/ca-cert.pem" to your browser.
 
 ## Generate New CA Certification
 ```

@@ -17,8 +17,8 @@ class HttpProcess():
     def process_response(self, response: Response):
         request = response.request
 
-        print(colored(response.message.status_code, 'yellow') + ' ' + colored(request.message.method, 'cyan') + ' ' + request.host + ' ' +  request.message.path)
-        #print(str(round(response_object.res_len/1024, 3)) + 'kb ' + str(response_object.get_roundtrip_time()) + 'sec\n', end='')
+        print(colored(request.message.method, 'cyan') + ' ' + request.url)
+        print('    ' + colored(response.message.status_code, 'yellow') + ' ' + str(round(len(bytes(response.message))/1024, 3)) + ' kB ' + str(round(response.get_roundtrip_time(), 3)) + ' sec\n', end='')
         #print(response.message)
         #print(response_object.raw_body)
         #print(len(response_object.raw_body))

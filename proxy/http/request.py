@@ -25,6 +25,7 @@ class Request:
             self.scheme = "http"
 
         self.message = message
+        self.url = '%s://%s:%s%s' % (self.scheme, self.host, self.port, self.message.get_origin_form())
 
     # http2への対応
     def alter_request_line(self) -> bool:
@@ -90,11 +91,11 @@ class Response:
         self.response_time = response_time
 
     def set_request_object(self, request_object: Request) -> None:
-        self.request_object = request_object
+        self.request = request_object
 
     def get_roundtrip_time(self) -> float | None:
-        if not self.request_object or not self.request_object.request_time or not self.response_time:
+        if not self.request or not self.request.request_time or not self.response_time:
             return None
 
-        roundtrip_time_timedelta = self.response_time - self.request_object.request_time
+        roundtrip_time_timedelta = self.response_time - self.request.request_time
         return roundtrip_time_timedelta

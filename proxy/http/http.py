@@ -258,14 +258,19 @@ class RequestMessage:
             msg += str(self.raw_body)[2:-1]
             return msg
 
+    def get_origin_form(self):
+        origin_form = "%s?%s" % (self.path, str(self.queries))
+        if self.fragment:
+            origin_form += "#%s" % self.fragment
+
+        return origin_form
+
     def get_request_line(self):
         request_target = ""
         if self.scheme and self.netloc:
             request_target += "%s://%s" % (self.scheme, self.netloc)
 
-        request_target += "%s?%s" % (self.path, str(self.queries))
-        if self.fragment:
-            request_target += "#%s" % self.fragment
+        request_target += self.get_origin_form()
 
         request_line = "%s %s %s\r\n" % (
             self.method, request_target, self.http_version)
