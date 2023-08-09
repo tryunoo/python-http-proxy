@@ -1,6 +1,5 @@
+from proxy.http.http import ResponseMessage
 import socket
-import re
-import email
 import ssl
 import h11
 
@@ -31,27 +30,26 @@ def recv_http_body(s, conn):
 
 
 def recv_http_header(s, conn):
-    raw_header = b''
+    raw_header = b""
     while True:
         event = conn.next_event()
+
         if event is h11.NEED_DATA:
             received_data = s.recv(4096)
             conn.receive_data(received_data)
             raw_header += received_data
-
-        if not event:
-            break
-        if type(event) is h11.Response or type(event) is h11.Request:
-            break
-        if type(event) is h11.CLOSED:
-            break
-
-    return raw_header
+        else:
+            return raw_header
 
 
 def recv_raw_http_msg(s: socket.socket, conn):
     raw_header = recv_http_header(s, conn)
+    connection_reader = conn._reader
     raw_body = recv_http_body(s, conn)
+
+    if type(connection_reader) == h11._readers.ChunkedReader:
+        pass
+
     raw_msg = raw_header + raw_body
 
     return raw_msg

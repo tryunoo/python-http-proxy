@@ -1,2 +1,0 @@
-from request import HttpRequest
-

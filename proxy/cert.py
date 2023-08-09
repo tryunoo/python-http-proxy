@@ -3,7 +3,7 @@ import random
 import socket
 import ssl
 import os
-import util
+from proxy import util
 
 
 def get_private_key(private_key_path):
