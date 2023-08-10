@@ -5,7 +5,7 @@ import urllib
 from cgi import FieldStorage
 from collections.abc import Iterator
 from collections.abc import MutableMapping
-from webscanner.http import exceptions
+from proxy import exceptions
 
 
 class Headers(MutableMapping):
