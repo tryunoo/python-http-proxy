@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from dateutil import tz  # type: ignore
 from proxy.http.http import RequestMessage, ResponseMessage
-from proxy.http import tube
+from proxy.http.tube import Tube
 from proxy.http import util
 from proxy.http import encoding
 from proxy.http.httpprocess import HttpProcess
@@ -44,15 +44,11 @@ class Request:
         self.alter_request_line()
 
         raw_request = bytes(self.message)
+        tube = Tube()
+        tube.open_connection(self.host, self.port, self.is_ssl)
 
-        retry = 3
-        for x in range(retry):
-            _ = x
-            self.request_time = datetime.now(tz.gettz(TIME_ZONE)).timestamp()
-            raw_response = tube.send_recv(self.host, self.port, self.is_ssl, raw_request)
-            if raw_response:
-                break
-            print("retring...")
+        self.request_time = datetime.now(tz.gettz(TIME_ZONE)).timestamp()
+        raw_response = tube.send_recv(raw_request)
 
         if not raw_response:
             return None

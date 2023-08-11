@@ -1,6 +1,6 @@
 from proxy.http.http import RequestMessage
 from proxy.http.request import Request
-from proxy.http import tube
+from proxy.http.tube import Tube
 from proxy import exceptions
 from proxy import util
 from proxy import cert
@@ -23,7 +23,7 @@ mycert = MyCert()
 
 
 class TCPHandler(socketserver.BaseRequestHandler):
-    def process_http(self, client_socket, request_message: RequestMessage):
+    def process_http(self, tube: Tube, request_message: RequestMessage):
         target = request_message.headers['Host']
         if ':' in target:
             host, port = target.split(':')
@@ -37,13 +37,13 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
         if not response: return
 
-        client_socket.sendall(bytes(response.message))
-        client_socket.close()
+        tube.send(bytes(response.message))
+        tube.close()
         return
 
-    def process_https(self, client_socket, request_message: RequestMessage):
+    def process_https(self, tube, request_message: RequestMessage):
         # webプロキシ接続OKの応答をクライアントに返す
-        client_socket.send(b"HTTP/1.0 200 Connection established\r\n\r\n")
+        tube.send(b"HTTP/1.0 200 Connection established\r\n\r\n")
 
         target = request_message.headers['Host']
         if ':' in target:
@@ -64,14 +64,9 @@ class TCPHandler(socketserver.BaseRequestHandler):
         client_ctx.load_cert_chain(certfile=fp.name, keyfile=config.private_key_path)
         fp.close()
 
-        try:
-            ssl_client_socket = client_ctx.wrap_socket(client_socket, server_side=True)
-            ssl_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        except Exception as e:
-            client_socket.close()
-            return
+        tube.upgrade_ssl(client_ctx)
 
-        raw_request = tube.recv_raw_http_request(ssl_client_socket)
+        raw_request = tube.recv_raw_http_request()
         request_message = RequestMessage(raw_request)
 
         request = Request(host, port, True, message=request_message)
@@ -80,18 +75,20 @@ class TCPHandler(socketserver.BaseRequestHandler):
         response = request.send()
 
         try:
-            ssl_client_socket.sendall(bytes(response.message))
+            tube.send(bytes(response.message))
         except OSError as e:
             return
 
-        ssl_client_socket.close()
+        tube.close()
 
         return
 
     def handle(self):
-        client_socket = self.request
+        tube = Tube()
+        tube.socket = self.request
+
         try:
-            raw_request = tube.recv_raw_http_request(client_socket)
+            raw_request = tube.recv_raw_http_request()
         except ConnectionResetError:
             return
 
@@ -116,11 +113,11 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
         # SSL通信でない場合（HTTP）
         if request_message.method != 'CONNECT':
-            self.process_http(client_socket, request_message)
+            self.process_http(tube, request_message)
 
         # SSL通信の場合（HTTPS）
         if request_message.method == 'CONNECT':
-            self.process_https(client_socket, request_message)
+            self.process_https(tube, request_message)
 
         return
 
