@@ -91,6 +91,7 @@ class Tube:
     def set_timeout(self, timeout: int):
         self.socket.settimeout(timeout)
 
-    def upgrade_ssl(self, ctx):
+    # Upgrade to ssl
+    def upgrade_socket(self, ctx):
         self.socket = ctx.wrap_socket(self.socket, server_side=True)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
