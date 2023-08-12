@@ -1,7 +1,7 @@
 import email
 import io
 import json
-import urllib
+import urllib.parse
 from cgi import FieldStorage
 from collections.abc import Iterator
 from collections.abc import MutableMapping
@@ -190,7 +190,7 @@ class Query(MutableMapping):
             self.queries = urllib.parse.parse_qs(queries)
 
     def __str__(self):
-        return "&".join("&".join(("%s=%s" % (key, value)) for value in values) for key, values in self.queries.items())
+        return urllib.parse.urlencode(self.queries, doseq=True)
 
     def __conteins__(self, key) -> bool:
         if key in self.queries:
