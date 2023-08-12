@@ -41,7 +41,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
         tube.close()
         return
 
-    def process_https(self, tube, request_message: RequestMessage):
+    def process_https(self, tube: Tube, request_message: RequestMessage):
         # webプロキシ接続OKの応答をクライアントに返す
         tube.send(b"HTTP/1.0 200 Connection established\r\n\r\n")
 
@@ -64,7 +64,10 @@ class TCPHandler(socketserver.BaseRequestHandler):
         client_ctx.load_cert_chain(certfile=fp.name, keyfile=config.private_key_path)
         fp.close()
 
-        tube.upgrade_ssl(client_ctx)
+        try:
+            tube.upgrade_socket(client_ctx)
+        except (ssl.SSLEOFError, BrokenPipeError):
+            return
 
         raw_request = tube.recv_raw_http_request()
         request_message = RequestMessage(raw_request)
