@@ -284,7 +284,7 @@ class RequestMessage:
     def get_origin_form(self):
         origin_form = "%s" % self.path
         if len(self.queries):
-            origin_form += "%s" % str(self.queries)
+            origin_form += "?%s" % str(self.queries)
         if self.fragment:
             origin_form += "#%s" % self.fragment
 
