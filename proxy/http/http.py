@@ -5,7 +5,7 @@ import urllib.parse
 from cgi import FieldStorage
 from collections.abc import Iterator
 from collections.abc import MutableMapping
-from proxy import exceptions
+from . import exceptions
 
 
 class Headers(MutableMapping):
@@ -251,8 +251,11 @@ class RequestMessage:
             raw_header = remained.strip()
             self.raw_body = b''
 
-        self.method, request_target, self.http_version = request_line.decode(
-            "utf-8").split(" ")
+        try:
+            self.method, request_target, self.http_version = request_line.decode(
+                "utf-8").split(" ")
+        except ValueError:
+            raise exceptions.NotHttp11RequestMessageError
 
         self.headers = Headers(raw_header)
 
@@ -377,7 +380,11 @@ class ResponseMessage:
             raw_header = remained.strip()
             self.raw_body = b''
 
-        items = response_line.decode('utf-8').split(" ", 2)
+        try:
+            items = response_line.decode('utf-8').split(" ", 2)
+        except ValueError:
+            raise exceptions.NotHttp11RequestMessageError
+
         if len(items) == 3:
             self.http_version, self.status_code, self.status_message = items
         elif len(items) == 2:
