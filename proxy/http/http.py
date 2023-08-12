@@ -225,7 +225,11 @@ class Query(MutableMapping):
                 yield key
 
     def __len__(self) -> int:
-        return len(self.fields)
+        return len(self.queries)
+
+
+class RequestBody:
+    pass
 
 
 class RequestMessage:
@@ -278,7 +282,9 @@ class RequestMessage:
             return msg
 
     def get_origin_form(self):
-        origin_form = "%s?%s" % (self.path, str(self.queries))
+        origin_form = "%s" % self.path
+        if len(self.queries):
+            origin_form += "%s" % str(self.queries)
         if self.fragment:
             origin_form += "#%s" % self.fragment
 
