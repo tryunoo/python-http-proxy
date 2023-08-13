@@ -30,108 +30,90 @@ class Headers(MutableMapping):
     ])
 
     >>> h.get_fields()
-    [('Host', 'example.com'), ('Accept', 'text/html'), ('accept', 'application/xml'),
-        ('Accept-Encoding', 'gzip, deflate')]
+    {'Host': ['example.com'], 'Accept': ['text/html', 'application/xml'], 'Accept-Encoding': ['gzip', 'deflate']}
 
     >>> h
     Host: example.com
-    Accept: text/html
-    accept: application/xml
+    Accept: text/html, application/xml
     Accept-Encoding: gzip, deflate
 
+
     >>> bytes(h)
-    b'Host: example.com\r\nAccept: text/html\r\naccept: application/xml\r\nAccept-Encoding: gzip, deflate\r\n'
+    b'Host: example.com\r\nAccept: text/html, application/xml\r\nAccept-Encoding: gzip, deflate\r\n'
 
     >>> h["Host"]
-    "example.com"
+    'example.com'
 
     >>> h["host"]
-    "example.com"
+    'example.com'
 
     >>> h["Accept"]
+    'text/html, application/xml'
+
+    >>> h.get_as_list("Accept")
     ["text/html", "application/xml"]
 
-    >>> h["Accept"] = "application/text"
+    >>> h["Accept"] = 'application/text'
     >>> h["Accept"]
-    "application/text"
+    'application/text'
 
     >>> h["Accept"] = ["application/text", "application/json"]
 
-    >>> del headers['Accept']
+    >>> del h["Accept"]
     >>> h
     Host: example.com
     Accept-Encoding: gzip, deflate
     """
 
     def __init__(self, fields: bytes | list[tuple[str, str]]) -> None:
-        if type(fields) == list:
-            self.fields = fields
-        elif type(fields) == bytes:
+        if type(fields) == bytes:
             message = email.message_from_string(fields.decode("utf-8"))
-            self.fields = message.items()
+            fields = message.items()
+
+        self.fields: dict[str, list] = {}
+        for field in fields:
+            key, value = field
+
+            key = self.__conv_key(key)
+            if key not in self.fields:
+                self.fields[key] = []
+
+            values = value.split(',')
+            for value in values:
+                self.fields[key].append(value.strip())
 
     def __repr__(self) -> str:
         return str(self.fields)
 
     def __conteins__(self, key: str) -> bool:
-        key_lower = key.lower()
-        for field in self.fields:
-            if field[0].lower() == key_lower:
-                return True
+        key = self.__conv_key(key)
 
-        return False
+        return key in self.fields
 
-    def __getitem__(self, key: str | int) -> str | list:
-        if type(key) is int:
-            key = str(key)
+    def __getitem__(self, key: str) -> str:
+        key = self.__conv_key(key)
 
-        values = []
-        key_lower = key.lower()
-        for field in self.fields:
-            if field[0].lower() == key_lower:
-                values.append(field[1])
+        values = self.fields[key]
 
         if len(values) == 0:
             raise KeyError
-        elif len(values) == 1:
-            return values[0]
         else:
-            return values
+            return ', '.join(values)
 
-    def __setitem__(self, key: str | int, values: str | list) -> None:
-        if type(values) is str:
-            values = [values]
-        if type(values) is int:
-            values = [str(values)]
-        if type(key) is int:
-            key = str(key)
+    def __setitem__(self, key: str, values: str | list) -> None:
+        key = self.__conv_key(key)
+        if key in self.fields:
+            del self.fields[key]
 
-        key_lower = key.lower()
-        for i, field in enumerate(self.fields):
-            if values and field[0].lower() == key_lower:
-                self.fields[i] = (key, values.pop(0))
-            elif field[0].lower() == key_lower:
-                self.fields[i] = None
-
-        while None in self.fields:
-            self.fields.remove(None)
-
-        while values:
-            self.fields.append((key, values.pop(0)))
+        self.add(key, values)
 
     def __delitem__(self, key: str):
-        key_lower = key.lower()
-
-        for i, field in enumerate(self.fields):
-            if field[0].lower() == key_lower:
-                self.fields[i] = None
-
-        while None in self.fields:
-            self.fields.remove(None)
+        key = self.__conv_key(key)
+        del self.fields[key]
 
     def __str__(self) -> str:
         if self.fields:
-            return "\r\n".join(": ".join(field) for field in self.fields) + "\r\n"
+            return "\r\n".join("%s: %s" % (key, ", ".join(values)) for key, values in self.fields.items()) + "\r\n"
         else:
             return ""
 
@@ -140,27 +122,44 @@ class Headers(MutableMapping):
 
     def __iter__(self) -> Iterator:
         seen = set()
-        for key, _ in self.fields:
-            lower_key = key.lower()
-            if lower_key not in seen:
-                seen.add(lower_key)
+        for key, _ in self.fields.items():
+            key = self.__conv_key(key)
+            if key not in seen:
+                seen.add(key)
                 yield key
 
     def __len__(self) -> int:
         return len(self.fields)
 
-    def get_fields(self) -> list:
+    def __conv_key(self, key: str) -> str:
+        new_key = ''
+        splitted = key.split('-')
+
+        for i, s in enumerate(splitted, 1):
+            new_key += s[0].upper()
+            new_key += s[1:].lower()
+            if i < len(splitted):
+                new_key += '-'
+
+        return new_key
+
+    def get_fields(self) -> dict:
         return self.fields
 
-    def add(self, key: str, value: str):
-        self.fields.append((key, value))
+    def add(self, key: str, values: str | list):
+        if type(values) is str:
+            values = values.split(',')
 
-    def insert(self, index: int, key: str, value: str):
-        self.fields.insert(index, (key, value))
+        key = self.__conv_key(key)
+        if key not in self.fields:
+            self.fields[key] = []
 
-    def keys(self) -> tuple:
-        return tuple(field[0] for field in self.fields)
+        for value in values:
+            self.fields[key].append(value.strip())
 
+    def get_as_list(self, key: str):
+        key = self.__conv_key(key)
+        return self.fields[key]
 
 class Query(MutableMapping):
     """

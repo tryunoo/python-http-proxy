@@ -66,7 +66,7 @@ class Request:
         if 'Content-Encoding' in response_message.headers:
             content_encoding = response_message.headers['Content-Encoding']
             response_message.raw_body = encoding.decode(response_message.raw_body, content_encoding)
-            response_message.headers['Content-Length'] = len(response_message.raw_body)
+            response_message.headers['Content-Length'] = str(len(response_message.raw_body))
             del response_message.headers['Content-Encoding']
 
         response = Response(self, response_time, response_message)

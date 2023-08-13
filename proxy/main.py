@@ -1,14 +1,13 @@
 from proxy.http.http import RequestMessage
 from proxy.http.request import Request
 from proxy.http.tube import Tube
-from proxy import exceptions
+from proxy.http import exceptions
 from proxy import util
 from proxy import cert
 
 import base64
 import tempfile
 import socketserver
-import socket
 import ssl
 import json
 import os
@@ -66,7 +65,7 @@ class TCPHandler(socketserver.BaseRequestHandler):
 
         try:
             tube.upgrade_socket(client_ctx)
-        except (ssl.SSLEOFError, BrokenPipeError):
+        except (OSError, ssl.SSLEOFError, BrokenPipeError):
             return
 
         raw_request = tube.recv_raw_http_request()
