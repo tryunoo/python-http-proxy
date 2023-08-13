@@ -1,16 +1,18 @@
 import socket
 import ssl
+
 import h11
 
-class Tube:    
+
+class Tube:
     def __init__(self) -> None:
         pass
 
-    def send(self, msg):
+    def send(self, msg: bytes) -> None:
         self.socket.sendall(msg)
 
-    def recv_http_body(self, conn) -> bytes:
-        raw_body = b''
+    def recv_http_body(self, conn: h11.Connection) -> bytes:
+        raw_body = b""
 
         while True:
             event = conn.next_event()
@@ -29,8 +31,7 @@ class Tube:
 
         return raw_body
 
-
-    def recv_http_header(self, conn) -> bytes:
+    def recv_http_header(self, conn: h11.Connection) -> bytes:
         raw_header = b""
         while True:
             event = conn.next_event()
@@ -42,8 +43,7 @@ class Tube:
             else:
                 return raw_header
 
-
-    def recv_raw_http_msg(self, conn) -> bytes:
+    def recv_raw_http_msg(self, conn: h11.Connection) -> bytes:
         raw_header = self.recv_http_header(conn)
         raw_body = self.recv_http_body(conn)
 
@@ -51,14 +51,11 @@ class Tube:
 
         return raw_msg
 
-
     def recv_raw_http_response(self) -> bytes:
         return self.recv_raw_http_msg(h11.Connection(our_role=h11.CLIENT))
 
-
     def recv_raw_http_request(self) -> bytes:
         return self.recv_raw_http_msg(h11.Connection(our_role=h11.SERVER))
-
 
     def send_recv(self, raw_request: bytes) -> bytes | None:
         self.socket.sendall(raw_request)
@@ -82,16 +79,16 @@ class Tube:
         if is_ssl:
             ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
             ctx.check_hostname = False
-            ctx.verify_mode = 0
+            ctx.verify_mode = ssl.CERT_NONE
             self.socket = ctx.wrap_socket(self.socket, server_hostname=host)
 
     def close(self) -> None:
         self.socket.close()
 
-    def set_timeout(self, timeout: int):
+    def set_timeout(self, timeout: int) -> None:
         self.socket.settimeout(timeout)
 
     # Upgrade to ssl
-    def upgrade_socket(self, ctx):
+    def upgrade_socket(self, ctx: ssl.SSLContext) -> None:
         self.socket = ctx.wrap_socket(self.socket, server_side=True)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

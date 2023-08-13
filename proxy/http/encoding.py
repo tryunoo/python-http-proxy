@@ -1,15 +1,12 @@
 import gzip
 import zlib
-import brotli
 from io import BytesIO
 
+import brotli
 
-def decode(content: bytes, encoding: str):
-    decoders = {
-        'gzip': decode_gzip,
-        'deflate': decode_deflate,
-        'br': decode_brotli
-    }
+
+def decode(content: bytes, encoding: str) -> bytes:
+    decoders = {"gzip": decode_gzip, "deflate": decode_deflate, "br": decode_brotli}
 
     if encoding in decoders:
         content = decoders[encoding](content)
@@ -36,4 +33,5 @@ def decode_deflate(content: bytes) -> bytes:
 def decode_brotli(content: bytes) -> bytes:
     if not content:
         return b""
-    return brotli.decompress(content)
+    res: bytes = brotli.decompress(content)
+    return res

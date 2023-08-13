@@ -1,20 +1,20 @@
 from datetime import datetime
 from typing import Optional
+
 from dateutil import tz  # type: ignore
-from proxy.http.http import RequestMessage, ResponseMessage
-from proxy.http.tube import Tube
-from proxy.http import util
-from proxy.http import encoding
-from proxy.http.httpprocess import HttpProcess
+from . import encoding, util
+from .http import RequestMessage, ResponseMessage
+from .tube import Tube
+from .httpprocess import HttpProcess
 
 TIME_ZONE = "Asia/Tokyo"
 
 
 class Request:
-    request_time: float | None = None
-    response = None
+    request_time: float | None
+    response: "Response"
 
-    def __init__(self, host, port, is_ssl, message: RequestMessage = None) -> None:
+    def __init__(self, host: str, port: int, is_ssl: bool, message: RequestMessage) -> None:
         self.host = host
         self.port = port
         self.is_ssl = is_ssl
@@ -25,13 +25,15 @@ class Request:
             self.scheme = "http"
 
         self.message = message
-        self.url = '%s://%s:%s%s' % (self.scheme, self.host, self.port, self.message.get_origin_form())
+
+    def get_url(self) -> str:
+        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.get_origin_form())
 
     # http2への対応
     def alter_request_line(self) -> bool:
         if self.message.http_version == "HTTP/2":
             self.message.http_version = "HTTP/1.1"
-        if 'Host' not in self.message.headers:
+        if "Host" not in self.message.headers:
             self.message.headers.add("Host", self.host)
 
         return True
@@ -57,17 +59,17 @@ class Request:
         response_message = ResponseMessage(raw_response)
 
         # chunkedされているボディを変換
-        if 'Transfer-Encoding' in response_message.headers:
-            if response_message.headers['Transfer-Encoding'] == 'chunked':
+        if "Transfer-Encoding" in response_message.headers:
+            if response_message.headers["Transfer-Encoding"] == "chunked":
                 response_message.raw_body = util.chunked_conv(response_message.raw_body)
-                del response_message.headers['Transfer-Encoding']
+                del response_message.headers["Transfer-Encoding"]
 
         # エンコーディングされているボディをデコード
-        if 'Content-Encoding' in response_message.headers:
-            content_encoding = response_message.headers['Content-Encoding']
+        if "Content-Encoding" in response_message.headers:
+            content_encoding = response_message.headers["Content-Encoding"]
             response_message.raw_body = encoding.decode(response_message.raw_body, content_encoding)
-            response_message.headers['Content-Length'] = str(len(response_message.raw_body))
-            del response_message.headers['Content-Encoding']
+            response_message.headers["Content-Length"] = str(len(response_message.raw_body))
+            del response_message.headers["Content-Encoding"]
 
         response = Response(self, response_time, response_message)
 

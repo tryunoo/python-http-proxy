@@ -3,8 +3,8 @@ import io
 import json
 import urllib.parse
 from cgi import FieldStorage
-from collections.abc import Iterator
-from collections.abc import MutableMapping
+from collections.abc import Iterator, MutableMapping
+
 from . import exceptions
 
 
@@ -65,10 +65,13 @@ class Headers(MutableMapping):
     Accept-Encoding: gzip, deflate
     """
 
-    def __init__(self, fields: bytes | list[tuple[str, str]]) -> None:
-        if type(fields) == bytes:
-            message = email.message_from_string(fields.decode("utf-8"))
+    def __init__(self, data: bytes | list[tuple[str, str]]) -> None:
+        fields: list[tuple[str, str]]
+        if type(data) == bytes:
+            message = email.message_from_string(data.decode("utf-8"))
             fields = message.items()
+        elif type(data) == list:
+            fields = data
 
         self.fields: dict[str, list] = {}
         for field in fields:
@@ -78,7 +81,7 @@ class Headers(MutableMapping):
             if key not in self.fields:
                 self.fields[key] = []
 
-            values = value.split(',')
+            values = value.split(",")
             for value in values:
                 self.fields[key].append(value.strip())
 
@@ -98,7 +101,7 @@ class Headers(MutableMapping):
         if len(values) == 0:
             raise KeyError
         else:
-            return ', '.join(values)
+            return ", ".join(values)
 
     def __setitem__(self, key: str, values: str | list) -> None:
         key = self.__conv_key(key)
@@ -107,7 +110,7 @@ class Headers(MutableMapping):
 
         self.add(key, values)
 
-    def __delitem__(self, key: str):
+    def __delitem__(self, key: str) -> None:
         key = self.__conv_key(key)
         del self.fields[key]
 
@@ -118,7 +121,7 @@ class Headers(MutableMapping):
             return ""
 
     def __bytes__(self) -> bytes:
-        return self.__str__().encode('utf-8')
+        return self.__str__().encode("utf-8")
 
     def __iter__(self) -> Iterator:
         seen = set()
@@ -132,23 +135,23 @@ class Headers(MutableMapping):
         return len(self.fields)
 
     def __conv_key(self, key: str) -> str:
-        new_key = ''
-        splitted = key.split('-')
+        new_key = ""
+        splitted = key.split("-")
 
         for i, s in enumerate(splitted, 1):
             new_key += s[0].upper()
             new_key += s[1:].lower()
             if i < len(splitted):
-                new_key += '-'
+                new_key += "-"
 
         return new_key
 
     def get_fields(self) -> dict:
         return self.fields
 
-    def add(self, key: str, values: str | list):
+    def add(self, key: str, values: str | list) -> None:
         if type(values) is str:
-            values = values.split(',')
+            values = values.split(",")
 
         key = self.__conv_key(key)
         if key not in self.fields:
@@ -157,20 +160,24 @@ class Headers(MutableMapping):
         for value in values:
             self.fields[key].append(value.strip())
 
-    def get_as_list(self, key: str):
+    def get_as_list(self, key: str) -> list[str]:
         key = self.__conv_key(key)
         return self.fields[key]
 
-class Query(MutableMapping):
-    """
-    >>> q = Query("value=a&value=b&num=3")
 
-    >>> q = Query(
+class Queries(MutableMapping):
+    """
+    >>> q = Queries("value=a&value=b&num=3")
+
+    >>> q = Queries(
             {'value': ['a', 'b'], 'num': ['3']}
         )
 
     >>> q
     value=a&value=b&num=3
+
+    >>> q['value']
+    ['a', 'b']
 
     >>> q['num'] = 1
     >>> q['test'] = ['A', 'B']
@@ -182,22 +189,24 @@ class Query(MutableMapping):
     num=3
     """
 
-    def __init__(self, queries: str | dict):
+    def __init__(self, queries: str | dict) -> None:
+        self.queries: dict[str, list]
+
         if type(queries) is dict:
             self.queries = queries
         elif type(queries) is str:
             self.queries = urllib.parse.parse_qs(queries)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return urllib.parse.urlencode(self.queries, doseq=True)
 
-    def __conteins__(self, key) -> bool:
+    def __conteins__(self, key: str) -> bool:
         if key in self.queries:
             return True
 
         return False
 
-    def __getitem__(self, key: str | int) -> str | list:
+    def __getitem__(self, key: str | int) -> list[str]:
         if type(key) is int:
             key = str(key)
 
@@ -205,15 +214,17 @@ class Query(MutableMapping):
             if _key == key:
                 return values
 
+        raise KeyError
+
     def __setitem__(self, key: str, values: str | list) -> None:
         if type(values) is str:
             values = [values]
-        if type(values) is int:
+        elif type(values) is int:
             values = [str(values)]
 
-        self.queries[key] = values
+        self.queries[key] = list(values)
 
-    def __delitem__(self, key: str):
+    def __delitem__(self, key: str) -> None:
         del self.queries[key]
 
     def __iter__(self) -> Iterator:
@@ -236,6 +247,15 @@ class RequestMessage:
     RFC9112
     https://datatracker.ietf.org/doc/html/rfc9112
     """
+    method: str
+    http_version: str
+    scheme: str
+    netloc: str
+    path: str
+    queries: Queries
+    fragment: str
+    headers: Headers
+    raw_body: bytes
 
     def __init__(self, msg: bytes):
         if b"\r\n" in msg:
@@ -248,7 +268,7 @@ class RequestMessage:
             self.raw_body = raw_body.strip()
         else:
             raw_header = remained.strip()
-            self.raw_body = b''
+            self.raw_body = b""
 
         try:
             self.method, request_target, self.http_version = request_line.decode(
@@ -262,11 +282,11 @@ class RequestMessage:
         self.scheme = o.scheme
         self.netloc = o.netloc
         self.path = o.path
-        self.queries = Query(o.query)
+        self.queries = Queries(o.query)
         self.fragment = o.fragment
 
     def __bytes__(self) -> bytes:
-        msg = self.get_request_line().encode("utf-8")
+        msg: bytes = self.get_request_line().encode("utf-8")
         msg += bytes(self.headers)
         msg += b"\r\n"
         msg += self.raw_body
@@ -275,15 +295,15 @@ class RequestMessage:
 
     def __str__(self) -> str:
         try:
-            return self.__bytes__().decode('utf-8')
+            return self.__bytes__().decode("utf-8")
         except UnicodeDecodeError:
-            msg = self.get_request_line()
+            msg: str = self.get_request_line()
             msg += str(self.headers)
-            msg += '\r\n'
+            msg += "\r\n"
             msg += str(self.raw_body)[2:-1]
             return msg
 
-    def get_origin_form(self):
+    def get_origin_form(self) -> str:
         origin_form = "%s" % self.path
         if len(self.queries):
             origin_form += "?%s" % str(self.queries)
@@ -292,7 +312,7 @@ class RequestMessage:
 
         return origin_form
 
-    def get_request_line(self):
+    def get_request_line(self) -> str:
         request_target = ""
         if self.scheme and self.netloc:
             request_target += "%s://%s" % (self.scheme, self.netloc)
@@ -304,13 +324,13 @@ class RequestMessage:
 
         return request_line
 
-    def update_content_length(self) -> bool:
-        if 'Contetn-Length' in self.headers:
+    def update_content_length(self) -> None:
+        if "Contetn-Length" in self.headers:
             self.headers["Content-Length"] = str(len(self.raw_body))
 
     def parse_body(self) -> dict | None:
         try:
-            content_type = self.headers['Content-Type']
+            content_type = self.headers["Content-Type"]
         except KeyError:
             content_type = None
 
@@ -367,7 +387,13 @@ class ResponseMessage:
     https://datatracker.ietf.org/doc/html/rfc9112
     """
 
-    def __init__(self, msg: bytes):
+    http_version: str
+    status_code: str
+    status_message: str | None
+    headers: Headers
+    raw_body: bytes
+
+    def __init__(self, msg: bytes) -> None:
         if b"\r\n" in msg:
             response_line, remained = msg.split(b"\r\n", 1)
         else:
@@ -377,10 +403,10 @@ class ResponseMessage:
             raw_header, self.raw_body = remained.split(b"\r\n\r\n", 1)
         else:
             raw_header = remained.strip()
-            self.raw_body = b''
+            self.raw_body = b""
 
         try:
-            items = response_line.decode('utf-8').split(" ", 2)
+            items = response_line.decode("utf-8").split(" ", 2)
         except ValueError:
             raise exceptions.NotHttp11RequestMessageError
 
@@ -388,12 +414,11 @@ class ResponseMessage:
             self.http_version, self.status_code, self.status_message = items
         elif len(items) == 2:
             self.http_version, self.status_code = items
-            self.status_message = None
 
         self.headers = Headers(raw_header)
 
     def __bytes__(self) -> bytes:
-        msg = self.get_status_line().encode("utf-8")
+        msg: bytes = self.get_status_line().encode("utf-8")
         msg += bytes(self.headers)
         msg += b"\r\n"
         msg += self.raw_body
@@ -402,18 +427,18 @@ class ResponseMessage:
 
     def __str__(self) -> str:
         try:
-            return self.__bytes__().decode('utf-8')
+            return self.__bytes__().decode("utf-8")
         except UnicodeDecodeError:
-            msg = self.get_status_line()
+            msg: str = self.get_status_line()
             msg += str(self.headers)
-            msg += '\r\n'
+            msg += "\r\n"
             msg += str(self.raw_body)[2:-1]
             return msg
 
-    def get_status_line(self):
-        status_line = ' '.join((self.http_version, self.status_code))
+    def get_status_line(self) -> str:
+        status_line = " ".join((self.http_version, self.status_code))
         if self.status_message:
-            status_line += ' ' + self.status_message
-        status_line += '\r\n'
+            status_line += " " + self.status_message
+        status_line += "\r\n"
 
         return status_line
