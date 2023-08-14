@@ -12,7 +12,7 @@ from . import exceptions
 class Query(MutableMapping):
     """
     RFC 3986: Uniform Resource Identifier (URI): Generic Syntax
-                Section 3.4 Query
+                Section 3.4. Query
     https://datatracker.ietf.org/doc/html/rfc3986#section-3.4
 
     >>> q = Query("value=a&value=b&num=3")
@@ -120,34 +120,47 @@ class URI():
         if self.scheme and self.authority:
             uri += "%s://%s" % (self.scheme, self.authority)
 
-        if self.path:
-            uri += "%s" % self.path
-
-        if len(self.query):
-            uri += "?%s" % str(self.query)
-        if self.fragment:
-            uri += "#%s" % self.fragment
+        uri += self.get_from_path()
 
         return uri
 
+    def get_from_path(self) -> str:
+        from_path = ''
+        if self.path:
+            from_path += "%s" % self.path
+
+        if len(self.query):
+            from_path += "?%s" % str(self.query)
+        if self.fragment:
+            from_path += "#%s" % self.fragment
+
+        return from_path
+
 
 class RequestLine():
+    """
+    RFC 9112: HTTP/1.1
+                Section 3. Request Line
+    https://datatracker.ietf.org/doc/html/rfc9112#section-3
+
+    request-line   = method SP request-target SP HTTP-version
+    """
     scheme: str
-    uri: URI
+    request_target: URI
     http_version: str
 
     def __init__(self, start_line: bytes | None = None, **kwargs: Any) -> None:
         if start_line is None:
             self.method = kwargs['method']
             self.http_version = kwargs['http_version']
-            self.scheme = kwargs['uri']
+            self.scheme = kwargs['request_target']
 
-            if 'uri' in kwargs:
-                uri = kwargs["uri"]
-                if type(uri) is URI:
-                    self.uri = uri
+            if 'request_target' in kwargs:
+                request_target = kwargs["request_target"]
+                if type(request_target) is URI:
+                    self.request_target = request_target
                 else:
-                    self.uri = URI(uri)
+                    self.request_target = URI(request_target)
         else:
             try:
                 self.method, request_target, self.http_version = start_line.decode(
@@ -155,10 +168,10 @@ class RequestLine():
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
-            self.uri = URI(request_target)
+            self.request_target = URI(request_target)
 
     def __str__(self):
-        return "%s %s %s\r\n" % (self.method, self.uri, self.http_version)
+        return "%s %s %s\r\n" % (self.method, self.request_target, self.http_version)
 
 class StatusLine():
     def __init__(self, start_line: bytes) -> None:
@@ -176,7 +189,7 @@ class StatusLine():
 class Headers(MutableMapping):
     """
     RFC 9112: HTTP/1.1
-                Section 5 Field Syntax
+                Section 5. Field Syntax
     https://datatracker.ietf.org/doc/html/rfc9112#section-5
 
     >>> h = Headers(
@@ -457,7 +470,7 @@ class RequestMessage:
     """
     method: str
     http_version: str
-    uri: URI
+    request_target: URI
     headers: Headers
     body: RequestBody
 
@@ -477,7 +490,7 @@ class RequestMessage:
 
         self.method = request_line.method
         self.http_version = request_line.http_version
-        self.uri = request_line.uri
+        self.request_target = request_line.request_target
         del request_line
 
         self.headers = Headers(raw_header)
@@ -504,7 +517,7 @@ class RequestMessage:
     def get_request_line(self) -> str:
         request_line = RequestLine(
             method=self.method,
-            uri=self.uri,
+            request_target=self.request_target,
             http_version=self.http_version
         )
 

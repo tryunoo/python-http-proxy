@@ -27,7 +27,7 @@ class Request:
         self.message = message
 
     def get_url(self) -> str:
-        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.uri)
+        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.request_target)
 
     # http2への対応
     def alter_request_line(self) -> bool:
