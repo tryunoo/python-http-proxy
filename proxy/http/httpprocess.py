@@ -6,16 +6,16 @@ if TYPE_CHECKING:
     from .request import Request, Response
 
 
-class HttpProcess():
-    def __init__(self):
+class HttpProcess:
+    def __init__(self) -> None:
         pass
 
     # リクエスト送信前のカスタム処理
-    def process_request(self, request: Request):
-        pass
+    def process_request(self, request: Request) -> None:
+        _ = request
 
     # レスポンス取得後のカスタム処理
-    def process_response(self, response: Response):
+    def process_response(self, response: Response) -> None:
         request = response.request
 
         print(colored(request.message.method, 'cyan') +

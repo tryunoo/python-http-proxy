@@ -3,7 +3,7 @@ import io
 import json
 import urllib.parse
 from cgi import FieldStorage
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Iterator, Mapping, MutableMapping
 from typing import Any
 
 from . import exceptions
@@ -36,6 +36,7 @@ class Query(MutableMapping):
     >>> q
     num=3
     """
+
     query: dict[str, list] = {}
 
     def __init__(self, query: str | dict) -> None:
@@ -85,7 +86,7 @@ class Query(MutableMapping):
         return len(self.query)
 
 
-class URI():
+class URI:
     r"""
     RFC 3986: Uniform Resource Identifier (URI): Generic Syntax
     https://datatracker.ietf.org/doc/html/rfc3986
@@ -116,7 +117,7 @@ class URI():
         self.fragment = o.fragment
 
     def __str__(self) -> str:
-        uri = ''
+        uri = ""
         if self.scheme and self.authority:
             uri += "%s://%s" % (self.scheme, self.authority)
 
@@ -125,7 +126,7 @@ class URI():
         return uri
 
     def get_from_path(self) -> str:
-        from_path = ''
+        from_path = ""
         if self.path:
             from_path += "%s" % self.path
 
@@ -137,7 +138,7 @@ class URI():
         return from_path
 
 
-class RequestLine():
+class RequestLine:
     """
     RFC 9112: HTTP/1.1
                 Section 3. Request Line
@@ -145,17 +146,18 @@ class RequestLine():
 
     request-line   = method SP request-target SP HTTP-version
     """
+
     scheme: str
     request_target: URI
     http_version: str
 
     def __init__(self, start_line: bytes | None = None, **kwargs: Any) -> None:
         if start_line is None:
-            self.method = kwargs['method']
-            self.http_version = kwargs['http_version']
-            self.scheme = kwargs['request_target']
+            self.method = kwargs["method"]
+            self.http_version = kwargs["http_version"]
+            self.scheme = kwargs["request_target"]
 
-            if 'request_target' in kwargs:
+            if "request_target" in kwargs:
                 request_target = kwargs["request_target"]
                 if type(request_target) is URI:
                     self.request_target = request_target
@@ -163,17 +165,17 @@ class RequestLine():
                     self.request_target = URI(request_target)
         else:
             try:
-                self.method, request_target, self.http_version = start_line.decode(
-                    "utf-8").split(" ")
+                self.method, request_target, self.http_version = start_line.decode("utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
             self.request_target = URI(request_target)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "%s %s %s\r\n" % (self.method, self.request_target, self.http_version)
 
-class StatusLine():
+
+class StatusLine:
     def __init__(self, start_line: bytes) -> None:
         try:
             items = start_line.decode("utf-8").split(" ", 2)
@@ -352,24 +354,25 @@ class MediaType:
     RFC 6838: Media Type Specifications and Registration Procedures
     https://datatracker.ietf.org/doc/html/rfc6838
     """
-    type: str
+
+    type_: str
     subtype: str
     suffix: str
     parameter: str
 
     def __init__(self, media_type: str) -> None:
-        if ';' in media_type:
-            media_type, self.parameter = list(x.strip() for x in media_type.split(';', 1))
+        if ";" in media_type:
+            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
 
-        self.type, self.subtype = media_type.split('/', 1)
+        self.type_, self.subtype = media_type.split("/", 1)
 
-        if '+' in self.subtype:
-            self.suffix = self.subtype.split('+', 1)[1]
+        if "+" in self.subtype:
+            self.suffix = self.subtype.split("+", 1)[1]
 
     def __str__(self) -> str:
-        media_type = "%s/%s" % (self.type, self.subtype)
-        if hasattr(self, 'parameter'):
-            media_type += '+%s' % self.parameter
+        media_type = "%s/%s" % (self.type_, self.subtype)
+        if hasattr(self, "parameter"):
+            media_type += "+%s" % self.parameter
 
         return media_type
 
@@ -390,10 +393,11 @@ class Body:
         return self.__raw_body
 
     def __str__(self) -> str:
-        return self.__raw_body.decode('utf-8')
+        return self.__raw_body.decode("utf-8")
 
     def __len__(self) -> int:
         return len(self.__raw_body)
+
 
 class RequestBody(Body):
     types: list[str]
@@ -401,15 +405,14 @@ class RequestBody(Body):
     def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
         super().__init__(raw_body, content_type)
 
-    def guess_media_type() -> str:
+    def guess_media_type(self) -> str:
         pass
 
-    def parse(self, guess=False) -> dict | None:
-        self.types = ['application/x-www-form-urlencoded', 'application/json', 'multipart/form-data']
+    def parse(self, guess: bool = False) -> dict | None:
+        self.types = ["application/x-www-form-urlencoded", "application/json", "multipart/form-data"]
 
         if guess:
             self.guess_media_type()
-        
 
         if len(self.__raw_body) == 0:
             return None
@@ -437,11 +440,11 @@ class RequestBody(Body):
 
         if self.media_type and "multipart/form-data" in str(self.media_type):
             environ = {"REQUEST_METHOD": "POST"}
-            headers = {
+            headers: Mapping = {
                 "content-type": self.media_type,
             }
 
-            fp = io.BytesIO(self.raw_body)
+            fp = io.BytesIO(self.__raw_body)
             fs = FieldStorage(fp=fp, environ=environ, headers=headers)
 
             dic = {"content-type": self.media_type, "data": {}}
@@ -459,9 +462,9 @@ class RequestBody(Body):
 
 
 class ResponseBody(Body):
-
     def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
         super().__init__(raw_body, content_type)
+
 
 class RequestMessage:
     """
@@ -476,6 +479,7 @@ class RequestMessage:
 
     request-line = method SP request-target SP HTTP-version
     """
+
     method: str
     http_version: str
     request_target: URI
@@ -524,9 +528,7 @@ class RequestMessage:
 
     def get_request_line(self) -> str:
         request_line = RequestLine(
-            method=self.method,
-            request_target=self.request_target,
-            http_version=self.http_version
+            method=self.method, request_target=self.request_target, http_version=self.http_version
         )
 
         return str(request_line)
@@ -535,11 +537,11 @@ class RequestMessage:
         if "Contetn-Length" in self.headers:
             self.headers["Content-Length"] = str(len(self.body))
 
-    def set_headers(self, raw_header: bytes):
+    def set_headers(self, raw_header: bytes) -> None:
         self.headers = Headers(raw_header)
 
-    def set_body(self, raw_body: bytes):
-        self.body = ResponseBody(raw_body)
+    def set_body(self, raw_body: bytes) -> None:
+        self.body = RequestBody(raw_body)
 
 
 class ResponseMessage:
@@ -584,7 +586,6 @@ class ResponseMessage:
         self.headers = Headers(raw_header)
         self.body = ResponseBody(raw_body)
 
-
     def __bytes__(self) -> bytes:
         msg: bytes = self.get_status_line().encode("utf-8")
         msg += bytes(self.headers)
@@ -614,8 +615,8 @@ class ResponseMessage:
 
         return status_line
 
-    def set_headers(self, raw_header: bytes):
+    def set_headers(self, raw_header: bytes) -> None:
         self.headers = Headers(raw_header)
 
-    def set_body(self, raw_body: bytes):
+    def set_body(self, raw_body: bytes) -> None:
         self.body = ResponseBody(raw_body)
