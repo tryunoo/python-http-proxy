@@ -3,7 +3,7 @@ from typing import Optional
 
 from dateutil import tz  # type: ignore
 from . import encoding, util
-from .http import RequestMessage, ResponseMessage
+from .http import RequestMessage, ResponseMessage, URI
 from .tube import Tube
 from .httpprocess import HttpProcess
 
@@ -26,8 +26,10 @@ class Request:
 
         self.message = message
 
-    def get_url(self) -> str:
-        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.request_target)
+    def get_uri(self) -> URI:
+        uri = "%s://%s:%s%s" % (self.scheme, self.host,
+                                self.port, self.message.request_target.get_from_path())
+        return URI(uri)
 
     # http2への対応
     def alter_request_line(self) -> bool:
@@ -68,9 +70,11 @@ class Request:
         # エンコーディングされているボディをデコード
         if "Content-Encoding" in response_message.headers:
             content_encoding = response_message.headers["Content-Encoding"]
-            raw_body = encoding.decode(bytes(response_message.body), content_encoding)
+            raw_body = encoding.decode(
+                bytes(response_message.body), content_encoding)
             response_message.set_body(raw_body)
-            response_message.headers["Content-Length"] = str(len(response_message.body))
+            response_message.headers["Content-Length"] = str(
+                len(response_message.body))
             del response_message.headers["Content-Encoding"]
 
         response = Response(self, response_time, response_message)
