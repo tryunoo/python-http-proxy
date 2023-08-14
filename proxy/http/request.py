@@ -27,7 +27,7 @@ class Request:
         self.message = message
 
     def get_url(self) -> str:
-        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.get_origin_form())
+        return "%s://%s:%s%s" % (self.scheme, self.host, self.port, self.message.uri)
 
     # http2への対応
     def alter_request_line(self) -> bool:
@@ -61,14 +61,16 @@ class Request:
         # chunkedされているボディを変換
         if "Transfer-Encoding" in response_message.headers:
             if response_message.headers["Transfer-Encoding"] == "chunked":
-                response_message.raw_body = util.chunked_conv(response_message.raw_body)
+                raw_body = util.chunked_conv(bytes(response_message.body))
+                response_message.set_body(raw_body)
                 del response_message.headers["Transfer-Encoding"]
 
         # エンコーディングされているボディをデコード
         if "Content-Encoding" in response_message.headers:
             content_encoding = response_message.headers["Content-Encoding"]
-            response_message.raw_body = encoding.decode(response_message.raw_body, content_encoding)
-            response_message.headers["Content-Length"] = str(len(response_message.raw_body))
+            raw_body = encoding.decode(bytes(response_message.body), content_encoding)
+            response_message.set_body(raw_body)
+            response_message.headers["Content-Length"] = str(len(response_message.body))
             del response_message.headers["Content-Encoding"]
 
         response = Response(self, response_time, response_message)

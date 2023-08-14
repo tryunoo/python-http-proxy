@@ -4,12 +4,181 @@ import json
 import urllib.parse
 from cgi import FieldStorage
 from collections.abc import Iterator, MutableMapping
+from typing import Any
 
 from . import exceptions
 
 
+class Query(MutableMapping):
+    """
+    RFC 3986: Uniform Resource Identifier (URI): Generic Syntax
+                Section 3.4 Query
+    https://datatracker.ietf.org/doc/html/rfc3986#section-3.4
+
+    >>> q = Query("value=a&value=b&num=3")
+
+    >>> q = Query(
+            {'value': ['a', 'b'], 'num': ['3']}
+        )
+
+    >>> q
+    value=a&value=b&num=3
+
+    >>> q['value']
+    ['a', 'b']
+
+    >>> q['num'] = 1
+    >>> q['test'] = ['A', 'B']
+    >>> q
+    value=a&value=b&num=1&test=A&test=B
+
+    >>> del q['value']
+    >>> q
+    num=3
+    """
+    query: dict[str, list] = {}
+
+    def __init__(self, query: str | dict) -> None:
+        if type(query) is dict:
+            self.query = query
+        elif type(query) is str:
+            self.query = urllib.parse.parse_qs(query)
+
+    def __str__(self) -> str:
+        return urllib.parse.urlencode(self.query, doseq=True)
+
+    def __conteins__(self, key: str) -> bool:
+        if key in self.query:
+            return True
+
+        return False
+
+    def __getitem__(self, key: str | int) -> list[str]:
+        if type(key) is int:
+            key = str(key)
+
+        for _key, values in self.query.items():
+            if _key == key:
+                return values
+
+        raise KeyError
+
+    def __setitem__(self, key: str, values: str | list) -> None:
+        if type(values) is str:
+            values = [values]
+        elif type(values) is int:
+            values = [str(values)]
+
+        self.query[key] = list(values)
+
+    def __delitem__(self, key: str) -> None:
+        del self.query[key]
+
+    def __iter__(self) -> Iterator:
+        seen = set()
+        for key, _ in self.query.items():
+            if key not in seen:
+                seen.add(key)
+                yield key
+
+    def __len__(self) -> int:
+        return len(self.query)
+
+
+class URI():
+    r"""
+    RFC 3986: Uniform Resource Identifier (URI): Generic Syntax
+    https://datatracker.ietf.org/doc/html/rfc3986
+
+     foo://example.com:8042/over/there?name=ferret#nose
+     \_/   \______________/\_________/ \_________/ \__/
+      |           |            |            |        |
+   scheme     authority       path        query   fragment
+      |   _____________________|__
+     / \ /                        \
+     urn:example:animal:ferret:nose
+
+    relative-ref  = relative-part [ "?" query ] [ "#" fragment ]
+    """
+
+    scheme: str
+    authority: str
+    path: str
+    query: Query
+    fragment: str
+
+    def __init__(self, uri: str) -> None:
+        o = urllib.parse.urlparse(uri)
+        self.scheme = o.scheme
+        self.authority = o.netloc
+        self.path = o.path
+        self.query = Query(o.query)
+        self.fragment = o.fragment
+
+    def __str__(self) -> str:
+        uri = ''
+        if self.scheme and self.authority:
+            uri += "%s://%s" % (self.scheme, self.authority)
+
+        if self.path:
+            uri += "%s" % self.path
+
+        if len(self.query):
+            uri += "?%s" % str(self.query)
+        if self.fragment:
+            uri += "#%s" % self.fragment
+
+        return uri
+
+
+class RequestLine():
+    scheme: str
+    uri: URI
+    http_version: str
+
+    def __init__(self, start_line: bytes | None = None, **kwargs: Any) -> None:
+        if start_line is None:
+            self.method = kwargs['method']
+            self.http_version = kwargs['http_version']
+            self.scheme = kwargs['uri']
+
+            if 'uri' in kwargs:
+                uri = kwargs["uri"]
+                if type(uri) is URI:
+                    self.uri = uri
+                else:
+                    self.uri = URI(uri)
+        else:
+            try:
+                self.method, request_target, self.http_version = start_line.decode(
+                    "utf-8").split(" ")
+            except ValueError:
+                raise exceptions.NotHttp11RequestMessageError
+
+            self.uri = URI(request_target)
+
+    def __str__(self):
+        return "%s %s %s\r\n" % (self.method, self.uri, self.http_version)
+
+class StatusLine():
+    def __init__(self, start_line: bytes) -> None:
+        try:
+            items = start_line.decode("utf-8").split(" ", 2)
+        except ValueError:
+            raise exceptions.NotHttp11RequestMessageError
+
+        if len(items) == 3:
+            self.http_version, self.status_code, self.status_message = items
+        elif len(items) == 2:
+            self.http_version, self.status_code = items
+
+
 class Headers(MutableMapping):
     """
+    RFC 9112: HTTP/1.1
+                Section 5 Field Syntax
+    https://datatracker.ietf.org/doc/html/rfc9112#section-5
+
     >>> h = Headers(
             b"".join(
             [
@@ -165,181 +334,76 @@ class Headers(MutableMapping):
         return self.fields[key]
 
 
-class Queries(MutableMapping):
+class MediaType:
     """
-    >>> q = Queries("value=a&value=b&num=3")
-
-    >>> q = Queries(
-            {'value': ['a', 'b'], 'num': ['3']}
-        )
-
-    >>> q
-    value=a&value=b&num=3
-
-    >>> q['value']
-    ['a', 'b']
-
-    >>> q['num'] = 1
-    >>> q['test'] = ['A', 'B']
-    >>> q
-    value=a&value=b&num=1&test=A&test=B
-
-    >>> del q['value']
-    >>> q
-    num=3
+    RFC 6838: Media Type Specifications and Registration Procedures
+    https://datatracker.ietf.org/doc/html/rfc6838
     """
+    type: str
+    subtype: str
+    suffix: str
+    parameter: str
 
-    def __init__(self, queries: str | dict) -> None:
-        self.queries: dict[str, list]
+    def __init__(self, media_type: str) -> None:
+        if ';' in media_type:
+            media_type, self.parameter = list(x.strip() for x in media_type.split(';', 1))
 
-        if type(queries) is dict:
-            self.queries = queries
-        elif type(queries) is str:
-            self.queries = urllib.parse.parse_qs(queries)
+        self.type, self.subtype = media_type.split('/', 1)
+
+        if '+' in self.subtype:
+            self.suffix = self.subtype.split('+', 1)[1]
 
     def __str__(self) -> str:
-        return urllib.parse.urlencode(self.queries, doseq=True)
+        media_type = "%s/%s" % (self.type, self.subtype)
+        if hasattr(self, 'parameter'):
+            media_type += '+%s' % self.parameter
 
-    def __conteins__(self, key: str) -> bool:
-        if key in self.queries:
-            return True
-
-        return False
-
-    def __getitem__(self, key: str | int) -> list[str]:
-        if type(key) is int:
-            key = str(key)
-
-        for _key, values in self.queries.items():
-            if _key == key:
-                return values
-
-        raise KeyError
-
-    def __setitem__(self, key: str, values: str | list) -> None:
-        if type(values) is str:
-            values = [values]
-        elif type(values) is int:
-            values = [str(values)]
-
-        self.queries[key] = list(values)
-
-    def __delitem__(self, key: str) -> None:
-        del self.queries[key]
-
-    def __iter__(self) -> Iterator:
-        seen = set()
-        for key, _ in self.queries.items():
-            if key not in seen:
-                seen.add(key)
-                yield key
-
-    def __len__(self) -> int:
-        return len(self.queries)
+        return media_type
 
 
-class RequestBody:
-    pass
+class Body:
+    media_type: MediaType | None
+    __raw_body: bytes
 
+    def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
+        self.__raw_body = raw_body
 
-class RequestMessage:
-    """
-    RFC9112
-    https://datatracker.ietf.org/doc/html/rfc9112
-    """
-    method: str
-    http_version: str
-    scheme: str
-    netloc: str
-    path: str
-    queries: Queries
-    fragment: str
-    headers: Headers
-    raw_body: bytes
-
-    def __init__(self, msg: bytes):
-        if b"\r\n" in msg:
-            request_line, remained = msg.split(b"\r\n", 1)
+        if content_type:
+            self.media_type = MediaType(content_type)
         else:
-            raise exceptions.NotHttp11RequestMessageError
-
-        if b"\r\n\r\n" in remained:
-            raw_header, raw_body = remained.split(b"\r\n\r\n", 1)
-            self.raw_body = raw_body.strip()
-        else:
-            raw_header = remained.strip()
-            self.raw_body = b""
-
-        try:
-            self.method, request_target, self.http_version = request_line.decode(
-                "utf-8").split(" ")
-        except ValueError:
-            raise exceptions.NotHttp11RequestMessageError
-
-        self.headers = Headers(raw_header)
-
-        o = urllib.parse.urlparse(request_target)
-        self.scheme = o.scheme
-        self.netloc = o.netloc
-        self.path = o.path
-        self.queries = Queries(o.query)
-        self.fragment = o.fragment
+            self.media_type = None
 
     def __bytes__(self) -> bytes:
-        msg: bytes = self.get_request_line().encode("utf-8")
-        msg += bytes(self.headers)
-        msg += b"\r\n"
-        msg += self.raw_body
-
-        return msg
+        return self.__raw_body
 
     def __str__(self) -> str:
-        try:
-            return self.__bytes__().decode("utf-8")
-        except UnicodeDecodeError:
-            msg: str = self.get_request_line()
-            msg += str(self.headers)
-            msg += "\r\n"
-            msg += str(self.raw_body)[2:-1]
-            return msg
+        return self.__raw_body.decode('utf-8')
 
-    def get_origin_form(self) -> str:
-        origin_form = "%s" % self.path
-        if len(self.queries):
-            origin_form += "?%s" % str(self.queries)
-        if self.fragment:
-            origin_form += "#%s" % self.fragment
+    def __len__(self) -> int:
+        return len(self.__raw_body)
 
-        return origin_form
+class RequestBody(Body):
+    types: list[str]
 
-    def get_request_line(self) -> str:
-        request_target = ""
-        if self.scheme and self.netloc:
-            request_target += "%s://%s" % (self.scheme, self.netloc)
+    def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
+        super().__init__(raw_body, content_type)
 
-        request_target += self.get_origin_form()
+    def guess_media_type() -> str:
+        pass
 
-        request_line = "%s %s %s\r\n" % (
-            self.method, request_target, self.http_version)
+    def parse_body(self, guess=False) -> dict | None:
+        self.types = ['application/x-www-form-urlencoded', 'application/json', 'multipart/form-data']
 
-        return request_line
+        if guess:
+            self.guess_media_type()
+        
 
-    def update_content_length(self) -> None:
-        if "Contetn-Length" in self.headers:
-            self.headers["Content-Length"] = str(len(self.raw_body))
-
-    def parse_body(self) -> dict | None:
-        try:
-            content_type = self.headers["Content-Type"]
-        except KeyError:
-            content_type = None
-
-        if len(self.raw_body) == 0:
+        if len(self.__raw_body) == 0:
             return None
 
         # application/json
         try:
-            body_parameters = json.loads(self.raw_body)
+            body_parameters = json.loads(self.__raw_body)
             res = {}
             res["content-type"] = "application/json"
             res["data"] = body_parameters
@@ -349,7 +413,7 @@ class RequestMessage:
 
         # application/x-www-form-urlencoded
         try:
-            body_parameters = urllib.parse.parse_qs(self.raw_body)
+            body_parameters = urllib.parse.parse_qs(self.__raw_body)
             res = {}
             res["content-type"] = "application/x-www-form-urlencoded"
             res["data"] = body_parameters
@@ -358,16 +422,16 @@ class RequestMessage:
         except ValueError:
             pass
 
-        if content_type and "multipart/form-data" in content_type.lower():
+        if self.media_type and "multipart/form-data" in str(self.media_type):
             environ = {"REQUEST_METHOD": "POST"}
             headers = {
-                "content-type": content_type,
+                "content-type": self.media_type,
             }
 
             fp = io.BytesIO(self.raw_body)
             fs = FieldStorage(fp=fp, environ=environ, headers=headers)
 
-            dic = {"content-type": content_type, "data": {}}
+            dic = {"content-type": self.media_type, "data": {}}
 
             if not fs.list:
                 return None
@@ -381,9 +445,85 @@ class RequestMessage:
         return None
 
 
+class ResponseBody(Body):
+
+    def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
+        super().__init__(raw_body, content_type)
+
+class RequestMessage:
+    """
+    RFC 9112: HTTP/1.1
+    https://datatracker.ietf.org/doc/html/rfc9112
+    """
+    method: str
+    http_version: str
+    uri: URI
+    headers: Headers
+    body: RequestBody
+
+    def __init__(self, msg: bytes):
+        if b"\r\n" in msg:
+            start_line, remained = msg.split(b"\r\n", 1)
+        else:
+            raise exceptions.NotHttp11RequestMessageError
+
+        request_line = RequestLine(start_line)
+
+        if b"\r\n\r\n" in remained:
+            raw_header, raw_body = remained.split(b"\r\n\r\n", 1)
+        else:
+            raw_header = remained.strip()
+            raw_body = b""
+
+        self.method = request_line.method
+        self.http_version = request_line.http_version
+        self.uri = request_line.uri
+        del request_line
+
+        self.headers = Headers(raw_header)
+        self.body = RequestBody(raw_body)
+
+    def __bytes__(self) -> bytes:
+        msg: bytes = self.get_request_line().encode("utf-8")
+        msg += bytes(self.headers)
+        msg += b"\r\n"
+        msg += bytes(self.body)
+
+        return msg
+
+    def __str__(self) -> str:
+        try:
+            return self.__bytes__().decode("utf-8")
+        except UnicodeDecodeError:
+            msg: str = self.get_request_line()
+            msg += str(self.headers)
+            msg += "\r\n"
+            msg += str(self.body)[2:-1]
+            return msg
+
+    def get_request_line(self) -> str:
+        request_line = RequestLine(
+            method=self.method,
+            uri=self.uri,
+            http_version=self.http_version
+        )
+
+        return str(request_line)
+
+    def update_content_length(self) -> None:
+        if "Contetn-Length" in self.headers:
+            self.headers["Content-Length"] = str(len(self.body))
+
+    def set_headers(self, raw_header: bytes):
+        self.headers = Headers(raw_header)
+
+    def set_body(self, raw_body: bytes):
+        self.body = ResponseBody(raw_body)
+
+
 class ResponseMessage:
     """
-    RFC9112
+    RFC 9112: HTTP/1.1
     https://datatracker.ietf.org/doc/html/rfc9112
     """
 
@@ -391,37 +531,36 @@ class ResponseMessage:
     status_code: str
     status_message: str | None
     headers: Headers
-    raw_body: bytes
+    body: ResponseBody
 
     def __init__(self, msg: bytes) -> None:
         if b"\r\n" in msg:
-            response_line, remained = msg.split(b"\r\n", 1)
+            start_line, remained = msg.split(b"\r\n", 1)
         else:
             raise exceptions.NotHttp11ResponseMessageError
 
         if b"\r\n\r\n" in remained:
-            raw_header, self.raw_body = remained.split(b"\r\n\r\n", 1)
+            raw_header, raw_body = remained.split(b"\r\n\r\n", 1)
         else:
             raw_header = remained.strip()
-            self.raw_body = b""
+            raw_body = b""
 
-        try:
-            items = response_line.decode("utf-8").split(" ", 2)
-        except ValueError:
-            raise exceptions.NotHttp11RequestMessageError
+        status_line = StatusLine(start_line)
 
-        if len(items) == 3:
-            self.http_version, self.status_code, self.status_message = items
-        elif len(items) == 2:
-            self.http_version, self.status_code = items
+        self.http_version = status_line.http_version
+        self.status_code = status_line.status_code
+        self.status_message = status_line.status_message
+        del status_line
 
         self.headers = Headers(raw_header)
+        self.body = ResponseBody(raw_body)
+
 
     def __bytes__(self) -> bytes:
         msg: bytes = self.get_status_line().encode("utf-8")
         msg += bytes(self.headers)
         msg += b"\r\n"
-        msg += self.raw_body
+        msg += bytes(self.body)
 
         return msg
 
@@ -432,8 +571,11 @@ class ResponseMessage:
             msg: str = self.get_status_line()
             msg += str(self.headers)
             msg += "\r\n"
-            msg += str(self.raw_body)[2:-1]
+            msg += str(self.body)[2:-1]
             return msg
+
+    def __len__(self) -> int:
+        return len(self.__bytes__())
 
     def get_status_line(self) -> str:
         status_line = " ".join((self.http_version, self.status_code))
@@ -442,3 +584,9 @@ class ResponseMessage:
         status_line += "\r\n"
 
         return status_line
+
+    def set_headers(self, raw_header: bytes):
+        self.headers = Headers(raw_header)
+
+    def set_body(self, raw_body: bytes):
+        self.body = ResponseBody(raw_body)
