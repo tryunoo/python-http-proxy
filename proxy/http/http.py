@@ -467,6 +467,14 @@ class RequestMessage:
     """
     RFC 9112: HTTP/1.1
     https://datatracker.ietf.org/doc/html/rfc9112
+
+    HTTP-message = start-line CRLF
+                 *( field-line CRLF )
+                 CRLF
+                 [ message-body ]
+    start-line = request-line / status-line
+
+    request-line = method SP request-target SP HTTP-version
     """
     method: str
     http_version: str
@@ -538,6 +546,14 @@ class ResponseMessage:
     """
     RFC 9112: HTTP/1.1
     https://datatracker.ietf.org/doc/html/rfc9112
+
+    HTTP-message = start-line CRLF
+             *( field-line CRLF )
+             CRLF
+             [ message-body ]
+    start-line = request-line / status-line
+
+    status-line = HTTP-version SP status-code SP [ reason-phrase ]
     """
 
     http_version: str
