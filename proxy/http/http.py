@@ -404,7 +404,7 @@ class RequestBody(Body):
     def guess_media_type() -> str:
         pass
 
-    def parse_body(self, guess=False) -> dict | None:
+    def parse(self, guess=False) -> dict | None:
         self.types = ['application/x-www-form-urlencoded', 'application/json', 'multipart/form-data']
 
         if guess:

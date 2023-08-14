@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING
 from termcolor import colored
 
 if TYPE_CHECKING:
-    from proxy.http.request import Request, Response
+    from .request import Request, Response
+
 
 class HttpProcess():
     def __init__(self):
