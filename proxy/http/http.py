@@ -165,8 +165,7 @@ class RequestLine:
                     self.request_target = URI(request_target)
         else:
             try:
-                self.method, request_target, self.http_version = start_line.decode(
-                    "utf-8").split(" ")
+                self.method, request_target, self.http_version = start_line.decode("utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
@@ -250,6 +249,8 @@ class Headers(MutableMapping):
     Accept-Encoding: gzip, deflate
     """
 
+    fields: dict[str, list]
+
     def __init__(self, data: bytes | list[tuple[str, str]]) -> None:
         fields: list[tuple[str, str]]
         if type(data) == bytes:
@@ -258,7 +259,7 @@ class Headers(MutableMapping):
         elif type(data) == list:
             fields = data
 
-        self.fields: dict[str, list] = {}
+        self.fields = {}
         for field in fields:
             key, value = field
 
@@ -293,7 +294,7 @@ class Headers(MutableMapping):
         if key in self.fields:
             if type(values) is str:
                 values = values.split(",")
-            self.fields[key] = values
+            self.fields[key] = list(values)
         else:
             self.add(key, values)
 
@@ -365,8 +366,7 @@ class MediaType:
 
     def __init__(self, media_type: str) -> None:
         if ";" in media_type:
-            media_type, self.parameter = list(
-                x.strip() for x in media_type.split(";", 1))
+            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
 
         self.type_, self.subtype = media_type.split("/", 1)
 
