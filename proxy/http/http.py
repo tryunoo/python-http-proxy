@@ -165,7 +165,8 @@ class RequestLine:
                     self.request_target = URI(request_target)
         else:
             try:
-                self.method, request_target, self.http_version = start_line.decode("utf-8").split(" ")
+                self.method, request_target, self.http_version = start_line.decode(
+                    "utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
@@ -290,9 +291,11 @@ class Headers(MutableMapping):
     def __setitem__(self, key: str, values: str | list) -> None:
         key = self.__conv_key(key)
         if key in self.fields:
-            del self.fields[key]
-
-        self.add(key, values)
+            if type(values) is str:
+                values = values.split(",")
+            self.fields[key] = values
+        else:
+            self.add(key, values)
 
     def __delitem__(self, key: str) -> None:
         key = self.__conv_key(key)
@@ -362,7 +365,8 @@ class MediaType:
 
     def __init__(self, media_type: str) -> None:
         if ";" in media_type:
-            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
+            media_type, self.parameter = list(
+                x.strip() for x in media_type.split(";", 1))
 
         self.type_, self.subtype = media_type.split("/", 1)
 
@@ -564,7 +568,7 @@ class RequestMessage:
         return str(request_line)
 
     def update_content_length(self) -> None:
-        if "Contetn-Length" in self.headers:
+        if "Content-Length" in self.headers:
             self.headers["Content-Length"] = str(len(self.body))
 
     def set_headers(self, raw_header: bytes) -> None:
