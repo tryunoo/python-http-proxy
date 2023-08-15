@@ -165,8 +165,7 @@ class RequestLine:
                     self.request_target = URI(request_target)
         else:
             try:
-                self.method, request_target, self.http_version = start_line.decode(
-                    "utf-8").split(" ")
+                self.method, request_target, self.http_version = start_line.decode("utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
@@ -363,8 +362,7 @@ class MediaType:
 
     def __init__(self, media_type: str) -> None:
         if ";" in media_type:
-            media_type, self.parameter = list(
-                x.strip() for x in media_type.split(";", 1))
+            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
 
         self.type_, self.subtype = media_type.split("/", 1)
 
@@ -380,7 +378,6 @@ class MediaType:
 
     def get_main_section(self) -> str:
         return "%s/%s" % (self.type_, self.subtype)
-
 
 
 class Body:
@@ -400,26 +397,26 @@ class Body:
     def __len__(self) -> int:
         return len(self._raw_body)
 
-    def set_body(self, raw_body: bytes, media_type: MediaType | None = None):
-        self._raw_body == raw_body
+    def set_body(self, raw_body: bytes, media_type: MediaType | None = None) -> None:
+        self._raw_body = raw_body
         if media_type:
-            self.media_type == media_type
+            self.media_type = media_type
 
 
 class RequestBody(Body):
     def __init__(self, raw_body: bytes, media_type: MediaType | None = None) -> None:
         super().__init__(raw_body, media_type)
 
-    def guess_media_type(self) -> MediaType:
+    def guess_media_type(self) -> MediaType | None:
         try:
             json.loads(self._raw_body)
-            return MediaType('application/json')
+            return MediaType("application/json")
         except json.JSONDecodeError:
             pass
 
         try:
             urllib.parse.parse_qs(self._raw_body)
-            return MediaType('application/x-www-form-urlencoded')
+            return MediaType("application/x-www-form-urlencoded")
         except ValueError:
             pass
 
@@ -432,19 +429,27 @@ class RequestBody(Body):
         fs = FieldStorage(fp=fp, environ=environ, headers=headers)
 
         if fs.list:
-            return MediaType('multipart/form-data')
+            return MediaType("multipart/form-data")
 
-    def parse(self, media_type: MediaType = None) -> dict | None:
+        return None
+
+    def parse(self, media_type: MediaType | None = None) -> dict | None:
         if len(self._raw_body) == 0:
             return None
 
         if not media_type:
-            media_type = self.media_type
+            if self.media_type:
+                media_type = self.media_type
+            else:
+                media_type = self.guess_media_type()
 
-        if media_type.subtype == "json" or (hasattr(self.media_type, "suffix") and self.media_type.suffix == "json"):
+        if not media_type:
+            return None
+
+        if media_type.subtype == "json" or (hasattr(media_type, "suffix") and media_type.suffix == "json"):
             try:
                 body_parameters = json.loads(self._raw_body)
-                return body_parameters
+                return dict(body_parameters)
             except json.JSONDecodeError:
                 pass
 
@@ -453,7 +458,7 @@ class RequestBody(Body):
                 body_parameters = urllib.parse.parse_qs(self._raw_body)
                 res = body_parameters
                 if len(body_parameters) > 0:
-                    return res
+                    return dict(res)
             except ValueError:
                 pass
 
@@ -482,8 +487,8 @@ class RequestBody(Body):
 
 
 class ResponseBody(Body):
-    def __init__(self, raw_body: bytes, content_type: str | None = None) -> None:
-        super().__init__(raw_body, content_type)
+    def __init__(self, raw_body: bytes, media_type: MediaType | None = None) -> None:
+        super().__init__(raw_body, media_type)
 
 
 class RequestMessage:
@@ -526,8 +531,8 @@ class RequestMessage:
         del request_line
 
         self.headers = Headers(raw_header)
-        if 'Content-Type' in self.headers:
-            media_type = MediaType(self.headers['Content-Type'])
+        if "Content-Type" in self.headers:
+            media_type = MediaType(self.headers["Content-Type"])
         else:
             media_type = None
 
