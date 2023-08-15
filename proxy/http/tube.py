@@ -68,9 +68,6 @@ class Tube:
         return raw_response
 
     def open_connection(self, host: str, port: int, is_ssl: bool, timeout: int = 20) -> None:
-        self.host = host
-        self.port = port
-        self.is_ssl = is_ssl
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

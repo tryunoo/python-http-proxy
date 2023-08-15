@@ -18,16 +18,13 @@ class Request:
         self.host = host
         self.port = port
         self.is_ssl = is_ssl
-
-        if is_ssl:
-            self.scheme = "https"
-        else:
-            self.scheme = "http"
-
         self.message = message
 
+    def get_scheme(self) -> str:
+        return 'https' if self.is_ssl else 'http'
+
     def get_uri(self) -> URI:
-        uri = "%s://%s:%s%s" % (self.scheme, self.host,
+        uri = "%s://%s:%s%s" % (self.get_scheme(), self.host,
                                 self.port, self.message.request_target.get_from_path())
         return URI(uri)
 
