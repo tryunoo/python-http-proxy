@@ -13,12 +13,25 @@ import json
 import os
 import re
 
-class Config(): pass
-config = Config()
+class Config():
+    host: str
+    port: int
+    auth: bool
+    private_key_path: str
+    cacert_path: str
+    auth_base64: str
+
+config: Config = Config()
 
 
-class MyCert(): pass
-mycert = MyCert()
+class MyCert():
+    private_key: str
+    private_key_pem: str
+    cacert: str
+    cacert_pem: str
+
+
+mycert: MyCert = MyCert()
 
 
 class TCPHandler(socketserver.BaseRequestHandler):
