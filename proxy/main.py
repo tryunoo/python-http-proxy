@@ -8,6 +8,7 @@ from proxy import cert
 import base64
 import tempfile
 import socketserver
+import traceback
 import ssl
 import json
 import os
@@ -47,7 +48,8 @@ class TCPHandler(socketserver.BaseRequestHandler):
         request = Request(host, port, False, message=request_message)
         response = request.send()
 
-        if not response: return
+        if not response:
+            return
 
         tube.send(bytes(response.message))
         tube.close()
@@ -126,13 +128,18 @@ class TCPHandler(socketserver.BaseRequestHandler):
                 return
         '''
 
-        # SSL通信でない場合（HTTP）
-        if request_message.method != 'CONNECT':
-            self.process_http(tube, request_message)
+        try:
+            # SSL通信でない場合（HTTP）
+            if request_message.method != 'CONNECT':
+                self.process_http(tube, request_message)
 
-        # SSL通信の場合（HTTPS）
-        if request_message.method == 'CONNECT':
-            self.process_https(tube, request_message)
+            # SSL通信の場合（HTTPS）
+            if request_message.method == 'CONNECT':
+                self.process_https(tube, request_message)
+        except Exception as e:
+            verbose = traceback.format_exc()
+            verbose += "".join([str(x) for x in e.args])
+            print(verbose)
 
         return
 
