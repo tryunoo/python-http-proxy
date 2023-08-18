@@ -119,7 +119,7 @@ class URI:
     def __str__(self) -> str:
         uri = ""
         if self.scheme and self.authority:
-            uri += "%s://%s" % (self.scheme, self.authority)
+            uri += f"{self.scheme}://{self.authority}"
 
         uri += self.get_from_path()
 
@@ -128,13 +128,12 @@ class URI:
     def get_from_path(self) -> str:
         from_path = ""
         if self.path:
-            from_path += "%s" % self.path
+            from_path += self.path
 
         if len(self.query):
-            from_path += "?%s" % str(self.query)
+            from_path += f"?{str(self.query)}"
         if self.fragment:
-            from_path += "#%s" % self.fragment
-
+            from_path += f"#{self.fragment}"
         return from_path
 
 
@@ -165,14 +164,15 @@ class RequestLine:
                     self.request_target = URI(request_target)
         else:
             try:
-                self.method, request_target, self.http_version = start_line.decode("utf-8").split(" ")
+                self.method, request_target, self.http_version = start_line.decode(
+                    "utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
 
             self.request_target = URI(request_target)
 
     def __str__(self) -> str:
-        return "%s %s %s\r\n" % (self.method, self.request_target, self.http_version)
+        return f"{self.method} {self.request_target} {self.http_version}\r\n"
 
 
 class StatusLine:
@@ -366,9 +366,14 @@ class MediaType:
 
     def __init__(self, media_type: str) -> None:
         if ";" in media_type:
-            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
+            media_type, self.parameter = list(
+                x.strip() for x in media_type.split(";", 1))
 
-        self.type_, self.subtype = media_type.split("/", 1)
+        if "/" in media_type:
+            self.type_, self.subtype = media_type.split("/", 1)
+        else:
+            self.type_ = media_type
+            self.subtype = ''
 
         if "+" in self.subtype:
             self.suffix = self.subtype.split("+", 1)[1]
@@ -376,12 +381,15 @@ class MediaType:
     def __str__(self) -> str:
         media_type = self.get_main_section()
         if hasattr(self, "parameter"):
-            media_type += "; %s" % self.parameter
+            media_type += f"; {self.parameter}"
 
         return media_type
 
     def get_main_section(self) -> str:
-        return "%s/%s" % (self.type_, self.subtype)
+        if self.subtype:
+            return f"{self.type_}/{self.subtype}"
+        else:
+            return self.type_
 
 
 class Body:
@@ -602,7 +610,7 @@ class ResponseMessage:
         if b"\r\n" in msg:
             start_line, remained = msg.split(b"\r\n", 1)
         else:
-            raise exceptions.NotHttp11ResponseMessageError
+            raise exceptions.NotHttp11ResponseMessageError()
 
         if b"\r\n\r\n" in remained:
             raw_header, raw_body = remained.split(b"\r\n\r\n", 1)

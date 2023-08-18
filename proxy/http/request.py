@@ -25,7 +25,7 @@ class Request:
         return "https" if self.is_ssl else "http"
 
     def get_uri(self) -> URI:
-        uri = "%s://%s:%s%s" % (self.get_scheme(), self.host, self.port, self.message.request_target.get_from_path())
+        uri = f"{self.get_scheme()}://{self.host}:{self.port}{self.message.request_target.get_from_path()}"
         return URI(uri)
 
     # http2への対応
