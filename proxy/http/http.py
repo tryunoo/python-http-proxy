@@ -43,7 +43,7 @@ class Query(MutableMapping):
         if type(query) is dict:
             self.query = query
         elif type(query) is str:
-            self.query = urllib.parse.parse_qs(query)
+            self.query = urllib.parse.parse_qs(query, keep_blank_values=True)
 
     def __str__(self) -> str:
         return urllib.parse.urlencode(self.query, doseq=True)
@@ -373,7 +373,7 @@ class MediaType:
             self.type_, self.subtype = media_type.split("/", 1)
         else:
             self.type_ = media_type
-            self.subtype = ''
+            self.subtype = ""
 
         if "+" in self.subtype:
             self.suffix = self.subtype.split("+", 1)[1]
@@ -427,7 +427,7 @@ class RequestBody(Body):
             pass
 
         try:
-            urllib.parse.parse_qs(self._raw_body)
+            urllib.parse.parse_qs(self._raw_body, keep_blank_values=True)
             return MediaType("application/x-www-form-urlencoded")
         except ValueError:
             pass
@@ -467,7 +467,8 @@ class RequestBody(Body):
 
         if media_type.subtype == "x-www-form-urlencoded":
             try:
-                body_parameters = urllib.parse.parse_qs(self._raw_body)
+                body_parameters = urllib.parse.parse_qs(
+                    self._raw_body, keep_blank_values=True)
                 res = body_parameters
                 if len(body_parameters) > 0:
                     return dict(res)
