@@ -186,6 +186,7 @@ class StatusLine:
             self.http_version, self.status_code, self.status_message = items
         elif len(items) == 2:
             self.http_version, self.status_code = items
+            self.status_message = None
 
 
 class Headers(MutableMapping):
