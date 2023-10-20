@@ -1,9 +1,7 @@
-from proxy.http.http import RequestMessage
-from proxy.http.request import Request
-from proxy.http.tube import Tube
-from proxy.http import exceptions
+from httprequest import Tube, exceptions, RequestMessage, PreparedRequest, Request
 from proxy import util
 from proxy import cert
+from typing import Callable
 
 import base64
 import tempfile
@@ -36,6 +34,13 @@ mycert: MyCert = MyCert()
 
 
 class TCPHandler(socketserver.BaseRequestHandler):
+    def communicate(self, prepared_request: PreparedRequest):
+        self.server.request_process(prepared_request)
+        response = prepared_request.send()
+        self.server.response_process(response)
+
+        return response
+
     def process_http(self, tube: Tube, request_message: RequestMessage):
         target = request_message.headers['Host']
         if ':' in target:
@@ -45,8 +50,9 @@ class TCPHandler(socketserver.BaseRequestHandler):
             host = target
             port = 80
 
-        request = Request(host, port, False, message=request_message)
-        response = request.send()
+        prepared_request = PreparedRequest(host, port, False, message=request_message)
+
+        response = self.communicate(prepared_request)
 
         if not response:
             return
@@ -86,10 +92,10 @@ class TCPHandler(socketserver.BaseRequestHandler):
         raw_request = tube.recv_raw_http_request()
         request_message = RequestMessage(raw_request)
 
-        request = Request(host, port, True, message=request_message)
+        prepared_request = PreparedRequest(host, port, True, message=request_message)
 
         # 対象サーバにリクエストを送信する
-        response = request.send()
+        response = self.communicate(prepared_request)
 
         try:
             tube.send(bytes(response.message))
@@ -175,7 +181,7 @@ def read_config():
             config.auth_base64 = base64.b64encode(b'%s:%s' %(json_config['auth_user_name'].encode(), json_config['auth_password'].encode())).decode()
 
 
-def run_proxy():
+def run_proxy(request_process: Callable = lambda x: x, response_process: Callable = lambda x: x):
     read_config()
 
     print(f"Serving on %s %s" % (config.host, config.port))
@@ -185,4 +191,6 @@ def run_proxy():
 
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     with socketserver.ThreadingTCPServer((config.host, config.port), TCPHandler) as server:
+        server.request_process = request_process
+        server.response_process = response_process
         server.serve_forever()

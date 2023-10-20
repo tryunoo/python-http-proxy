@@ -4,9 +4,17 @@ import json
 import urllib.parse
 from cgi import FieldStorage
 from collections.abc import Iterator, Mapping, MutableMapping
-from typing import Any
+from datetime import datetime
+from typing import Optional
 
-from . import exceptions
+from dateutil import tz  # type: ignore
+
+from . import encoding, exceptions, util
+from .tube import Tube
+
+TIME_ZONE = "Asia/Tokyo"
+HTTP_VERSIONS = ("HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3")
+HTTP_METHODS = ("GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH")
 
 
 class Query(MutableMapping):
@@ -107,6 +115,8 @@ class URI:
     path: str
     query: Query
     fragment: str
+    host: str
+    port: int | None
 
     def __init__(self, uri: str) -> None:
         o = urllib.parse.urlparse(uri)
@@ -116,12 +126,36 @@ class URI:
         self.query = Query(o.query)
         self.fragment = o.fragment
 
+        if self.scheme == "" or self.authority == "":
+            raise exceptions.NotURIError
+
+        if ":" in self.authority:
+            self.host, port_str = self.authority.split(":")
+            try:
+                port = int(port_str)
+            except ValueError:
+                raise exceptions.NotURIError
+
+            if port < 0 and 65535 < port:
+                raise exceptions.NotPortNumberError
+
+            self.port = port
+        else:
+            self.host = self.authority
+
     def __str__(self) -> str:
         uri = ""
         if self.scheme and self.authority:
             uri += f"{self.scheme}://{self.authority}"
 
         uri += self.get_from_path()
+
+        return uri
+
+    def get_to_path(self) -> str:
+        uri = ""
+        if self.scheme and self.authority:
+            uri += f"{self.scheme}://{self.authority}"
 
         return uri
 
@@ -146,36 +180,45 @@ class RequestLine:
     request-line   = method SP request-target SP HTTP-version
     """
 
-    scheme: str
-    request_target: URI
+    method: str
+    request_target: str
     http_version: str
 
-    def __init__(self, start_line: bytes | None = None, **kwargs: Any) -> None:
-        if start_line is None:
-            self.method = kwargs["method"]
-            self.http_version = kwargs["http_version"]
-            self.scheme = kwargs["request_target"]
-
-            if "request_target" in kwargs:
-                request_target = kwargs["request_target"]
-                if type(request_target) is URI:
-                    self.request_target = request_target
-                else:
-                    self.request_target = URI(request_target)
-        else:
+    def __init__(
+        self,
+        start_line: bytes | None = None,
+        method: str | None = None,
+        request_target: str | None = None,
+        http_version: str | None = None,
+    ) -> None:
+        if start_line:
+            if type(start_line) != bytes:
+                raise TypeError
             try:
-                self.method, request_target, self.http_version = start_line.decode(
-                    "utf-8").split(" ")
+                method, request_target, http_version = start_line.decode("utf-8").split(" ")
             except ValueError:
                 raise exceptions.NotHttp11RequestMessageError
+        else:
+            if not method or not http_version or not request_target:
+                raise TypeError
 
-            self.request_target = URI(request_target)
+        if method not in HTTP_METHODS:
+            raise exceptions.NotHttpMethodError
+
+        if http_version not in HTTP_VERSIONS:
+            raise exceptions.NotHttpVersionError
+
+        self.method = method
+        self.request_target = request_target
+        self.http_version = http_version
 
     def __str__(self) -> str:
         return f"{self.method} {self.request_target} {self.http_version}\r\n"
 
 
 class StatusLine:
+    status_message: None | str
+
     def __init__(self, start_line: bytes) -> None:
         try:
             items = start_line.decode("utf-8").split(" ", 2)
@@ -195,6 +238,7 @@ class Headers(MutableMapping):
                 Section 5. Field Syntax
     https://datatracker.ietf.org/doc/html/rfc9112#section-5
 
+    bytes
     >>> h = Headers(
             b"".join(
             [
@@ -207,11 +251,19 @@ class Headers(MutableMapping):
         )
     )
 
+    tupple
     >>> h = Headers([
         ("Host", "example.com"),
         ("Accept", "text/html"),
         ("accept", "application/xml"),
         ("Accept-Encoding", "gzip, deflate"),
+    ])
+
+    dict
+    >>> h = Headers({
+        "Host": "example.com",
+        "Accept": "text/html, application/xml",
+        "Accept-Encoding": "gzip, deflate",
     ])
 
     >>> h.get_fields()
@@ -252,15 +304,22 @@ class Headers(MutableMapping):
 
     fields: dict[str, list]
 
-    def __init__(self, data: bytes | list[tuple[str, str]]) -> None:
+    def __init__(self, data: bytes | list[tuple[str, str]] | dict | None = None) -> None:
         fields: list[tuple[str, str]]
-        if type(data) == bytes:
+        self.fields = {}
+
+        if not data:
+            fields = []
+        elif type(data) is bytes:
             message = email.message_from_string(data.decode("utf-8"))
             fields = message.items()
-        elif type(data) == list:
+        elif type(data) is list:
             fields = data
+        elif type(data) is dict:
+            fields = list(data.items())
+        else:
+            raise TypeError
 
-        self.fields = {}
         for field in fields:
             key, value = field
 
@@ -367,8 +426,7 @@ class MediaType:
 
     def __init__(self, media_type: str) -> None:
         if ";" in media_type:
-            media_type, self.parameter = list(
-                x.strip() for x in media_type.split(";", 1))
+            media_type, self.parameter = list(x.strip() for x in media_type.split(";", 1))
 
         if "/" in media_type:
             self.type_, self.subtype = media_type.split("/", 1)
@@ -468,8 +526,7 @@ class RequestBody(Body):
 
         if media_type.subtype == "x-www-form-urlencoded":
             try:
-                body_parameters = urllib.parse.parse_qs(
-                    self._raw_body, keep_blank_values=True)
+                body_parameters = urllib.parse.parse_qs(self._raw_body, keep_blank_values=True)
                 res = body_parameters
                 if len(body_parameters) > 0:
                     return dict(res)
@@ -520,43 +577,68 @@ class RequestMessage:
     """
 
     method: str
+    request_target: str
     http_version: str
-    request_target: URI
     headers: Headers
-    body: RequestBody
+    body: RequestBody | None
 
-    def __init__(self, msg: bytes):
-        if b"\r\n" in msg:
-            start_line, remained = msg.split(b"\r\n", 1)
+    def __init__(
+        self,
+        msg: bytes | None = None,
+        method: str | None = None,
+        request_target: str | None = None,
+        http_version: str | None = None,
+        headers: dict | None = None,
+        raw_body: bytes | None = None,
+    ):
+        if msg is not None:
+            if type(msg) is not bytes:
+                raise TypeError
+
+            if b"\r\n" in msg:
+                start_line, remained = msg.split(b"\r\n", 1)
+            else:
+                raise exceptions.NotHttp11RequestMessageError
+
+            request_line = RequestLine(start_line)
+
+            if b"\r\n\r\n" in remained:
+                raw_header, raw_body = remained.split(b"\r\n\r\n", 1)
+            else:
+                raw_header = remained.strip()
+
+            self.headers = Headers(raw_header)
         else:
-            raise exceptions.NotHttp11RequestMessageError
-
-        request_line = RequestLine(start_line)
-
-        if b"\r\n\r\n" in remained:
-            raw_header, raw_body = remained.split(b"\r\n\r\n", 1)
-        else:
-            raw_header = remained.strip()
-            raw_body = b""
+            request_line = RequestLine(method=method, request_target=request_target, http_version=http_version)
+            self.headers = Headers(headers)
 
         self.method = request_line.method
         self.http_version = request_line.http_version
         self.request_target = request_line.request_target
         del request_line
 
-        self.headers = Headers(raw_header)
-        if "Content-Type" in self.headers:
-            media_type = MediaType(self.headers["Content-Type"])
-        else:
-            media_type = None
+        o = urllib.parse.urlparse(self.request_target)
+        self.url_query = Query(o.query)
 
-        self.body = RequestBody(raw_body, media_type)
+        if raw_body:
+            if type(raw_body) != bytes:
+                raise TypeError
+
+            if "Content-Type" in self.headers:
+                media_type = MediaType(self.headers["Content-Type"])
+            else:
+                media_type = None
+
+            self.body = RequestBody(raw_body, media_type)
+        else:
+            self.body = None
 
     def __bytes__(self) -> bytes:
         msg: bytes = self.get_request_line().encode("utf-8")
         msg += bytes(self.headers)
         msg += b"\r\n"
-        msg += bytes(self.body)
+        if self.body:
+            msg += bytes(self.body)
 
         return msg
 
@@ -577,15 +659,61 @@ class RequestMessage:
 
         return str(request_line)
 
-    def update_content_length(self) -> None:
-        if "Content-Length" in self.headers:
-            self.headers["Content-Length"] = str(len(self.body))
-
     def set_headers(self, raw_header: bytes) -> None:
         self.headers = Headers(raw_header)
 
     def set_body(self, raw_body: bytes) -> None:
         self.body = RequestBody(raw_body)
+
+    def send(self, host: str, port: int, is_ssl: bool) -> Optional["Response"]:
+        request = Request(host, port, is_ssl, self)
+
+        # HTTP/1.1に変換
+        if self.http_version == "HTTP/2":
+            self.http_version = "HTTP/1.1"
+        if "Host" not in self.headers:
+            self.headers.add("Host", host)
+
+        if "Content-Length" in self.headers:
+            if not self.body:
+                self.headers["Content-Length"] = "0"
+            else:
+                self.headers["Content-Length"] = str(len(self.body))
+
+        raw_request = self.__bytes__()
+        tube = Tube()
+        tube.open_connection(request.host, request.port, request.is_ssl)
+
+        request.request_time = datetime.now(tz.gettz(TIME_ZONE)).timestamp()
+        tube.send(raw_request)
+
+        try:
+            raw_response = tube.recv_raw_http_response()
+        except TimeoutError:
+            return None
+
+        response_time = datetime.now(tz.gettz(TIME_ZONE)).timestamp()
+
+        response_message = ResponseMessage(raw_response)
+
+        # chunkedされているボディを変換
+        if "Transfer-Encoding" in response_message.headers:
+            if response_message.headers["Transfer-Encoding"] == "chunked":
+                raw_body = util.chunked_conv(bytes(response_message.body))
+                response_message.set_body(raw_body)
+                del response_message.headers["Transfer-Encoding"]
+
+        # エンコーディングされているボディをデコード
+        if "Content-Encoding" in response_message.headers:
+            content_encoding = response_message.headers["Content-Encoding"]
+            raw_body = encoding.decode(bytes(response_message.body), content_encoding)
+            response_message.set_body(raw_body)
+            response_message.headers["Content-Length"] = str(len(response_message.body))
+            del response_message.headers["Content-Encoding"]
+
+        response = Response(request, response_time, response_message)
+
+        return response
 
 
 class ResponseMessage:
@@ -609,6 +737,9 @@ class ResponseMessage:
     body: ResponseBody
 
     def __init__(self, msg: bytes) -> None:
+        if type(msg) is not bytes:
+            raise TypeError
+
         if b"\r\n" in msg:
             start_line, remained = msg.split(b"\r\n", 1)
         else:
@@ -664,3 +795,61 @@ class ResponseMessage:
 
     def set_body(self, raw_body: bytes) -> None:
         self.body = ResponseBody(raw_body)
+
+
+class RequestMaster:
+    request_time: float | None
+    response: "Response"
+
+    def __init__(self, host: str, port: int, is_ssl: bool, message: RequestMessage) -> None:
+        if type(host) is not str:
+            raise TypeError
+        if type(port) is not int or (port < 0 and 65535 < port):
+            raise exceptions.NotPortNumberError
+        if type(is_ssl) is not bool:
+            raise TypeError
+
+        self.host = host
+        self.port = port
+        self.is_ssl = is_ssl
+        self.message = message
+
+    def get_scheme(self) -> str:
+        return "https" if self.is_ssl else "http"
+
+    def get_uri(self) -> URI:
+        scheme = self.get_scheme()
+        authority = f"{self.host}:{self.port}"
+
+        u = urllib.parse.urlparse(self.message.request_target)
+        u = u._replace(scheme=scheme)
+        u = u._replace(netloc=authority)
+
+        uri = urllib.parse.urlunparse(u)
+
+        return URI(uri)
+
+
+class PreparedRequest(RequestMaster):
+    def send(self) -> Optional["Response"]:
+        return self.message.send(self.host, self.port, self.is_ssl)
+
+
+class Request(RequestMaster):
+    request_time: float | None
+    response: "Response"
+
+
+class Response:
+    def __init__(self, request: Request, response_time: float, message: ResponseMessage):
+        self.response_time = response_time
+        self.message = message
+        self.request = request
+        request.response = self
+
+    def get_roundtrip_time(self) -> float | None:
+        if not self.request or not self.request.request_time or not self.response_time:
+            return None
+
+        roundtrip_time_timedelta = self.response_time - self.request.request_time
+        return roundtrip_time_timedelta
